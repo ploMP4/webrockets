@@ -114,7 +114,7 @@ fn start_server() -> PyResult<()> {
 }
 
 #[pymodule]
-fn django_rsws(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn django_wsrs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(start_server, m)?)?;
     Ok(())
 }

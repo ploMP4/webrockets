@@ -1,11 +1,11 @@
-import django_rsws
+import django_wsrs
 
 from django.apps import AppConfig
 
 
 class WsRsAppConfig(AppConfig):
-    name = "django_rsws"
-    verbose_name = "django_rsws"
+    name = "django_wsrs"
+    verbose_name = "django_wsrs"
 
     def ready(self) -> None:
-        django_rsws.start_server()
+        django_wsrs.start_server()
