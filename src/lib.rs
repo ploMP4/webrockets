@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
+use std::ops::ControlFlow;
 
 use axum::extract::connect_info::ConnectInfo;
-use axum::extract::ws::{CloseFrame, Utf8Bytes};
 use axum::{
     body::Bytes,
     extract::{
@@ -15,6 +15,39 @@ use axum::{
 use pyo3::prelude::*;
 use tokio::runtime::Runtime;
 
+fn process_message(msg: Message, who: SocketAddr) -> ControlFlow<(), ()> {
+    match msg {
+        Message::Text(t) => {
+            println!(">>> {who} sent str: {t:?}");
+        }
+        Message::Binary(d) => {
+            println!(">>> {who} sent {} bytes: {d:?}", d.len());
+        }
+        Message::Close(c) => {
+            if let Some(cf) = c {
+                println!(
+                    ">>> {who} sent close with code {} and reason `{}`",
+                    cf.code, cf.reason
+                );
+            } else {
+                println!(">>> {who} somehow sent close message without CloseFrame");
+            }
+            return ControlFlow::Break(());
+        }
+
+        Message::Pong(v) => {
+            println!(">>> {who} sent pong with {v:?}");
+        }
+        // You should never need to manually handle Message::Ping, as axum's websocket library
+        // will do so for you automagically by replying with Pong and copying the v according to
+        // spec. But if you need the contents of the pings you can see them here.
+        Message::Ping(v) => {
+            println!(">>> {who} sent ping with {v:?}");
+        }
+    }
+    ControlFlow::Continue(())
+}
+
 async fn handle_socket(mut socket: WebSocket, who: SocketAddr) {
     if socket
         .send(Message::Ping(Bytes::from_static(&[1, 2, 3])))
@@ -27,15 +60,28 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr) {
         return;
     }
 
-    if let Err(e) = socket
-        .send(Message::Close(Some(CloseFrame {
-            code: axum::extract::ws::close_code::NORMAL,
-            reason: Utf8Bytes::from_static("Goodbye"),
-        })))
-        .await
-    {
-        tracing::warn!("Could not send Close due to {e}, probably it is ok?");
+    loop {
+        if let Some(msg) = socket.recv().await {
+            if let Ok(msg) = msg {
+                if process_message(msg, who).is_break() {
+                    break;
+                }
+
+                if socket
+                    .send(Message::Text(format!("Hi times!").into()))
+                    .await
+                    .is_err()
+                {
+                    println!("client {who} abruptly disconnected");
+                    break;
+                }
+            } else {
+                println!("client {who} abruptly disconnected");
+                break;
+            }
+        }
     }
+
     tracing::info!("Websocket context {who} destroyed");
 }
 
@@ -52,7 +98,9 @@ fn start_server() -> PyResult<()> {
         let rt = Runtime::new().expect("Unable to create tokio runtime");
         rt.block_on(async move {
             let app = Router::new().route("/ws", any(ws_handler));
-            let listener = tokio::net::TcpListener::bind("0.0.0.0:6969").await.unwrap();
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:6969")
+                .await
+                .unwrap();
             tracing::debug!("listening on {}", listener.local_addr().unwrap());
             axum::serve(
                 listener,
