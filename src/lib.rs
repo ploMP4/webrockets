@@ -1,35 +1,28 @@
+use fastwebsockets::{upgrade, Frame, OpCode, WebSocketError};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 
 use axum::extract::connect_info::ConnectInfo;
-use axum::extract::{Query, State};
-use axum::{
-    body::Bytes,
-    extract::{
-        ws::{Message, WebSocket},
-        WebSocketUpgrade,
-    },
-    response::IntoResponse,
-    routing::any,
-    Router,
-};
-use futures_util::stream::StreamExt;
-use futures_util::SinkExt;
+use axum::extract::Query;
+use axum::{response::IntoResponse, routing::any, Router};
 use pyo3::types::{PyCFunction, PyDict, PyTuple, PyType};
 use pyo3::{intern, prelude::*};
 use serde::Deserialize;
 use tokio::runtime::Runtime;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, RwLock};
 
+type Registry = Arc<RwLock<HashMap<String, Arc<Py<SocketView>>>>>;
+
+static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 static SERVER_STARTED: AtomicBool = AtomicBool::new(false);
 static BROADCAST_TX: OnceLock<broadcast::Sender<BroadcastMessage>> = OnceLock::new();
-static REGISTRY: OnceLock<Arc<Mutex<HashMap<String, Py<SocketView>>>>> = OnceLock::new();
+static REGISTRY: OnceLock<Registry> = OnceLock::new();
 
-fn get_registry() -> Arc<Mutex<HashMap<String, Py<SocketView>>>> {
+fn get_registry() -> Registry {
     REGISTRY
-        .get_or_init(|| Arc::new(Mutex::new(HashMap::new())))
+        .get_or_init(|| Arc::new(RwLock::new(HashMap::new())))
         .clone()
 }
 
@@ -55,19 +48,19 @@ impl SocketView {
     }
 
     pub fn connect(&self) -> PyResult<()> {
-        println!("Hello there connect");
+        // println!("Hello there connect");
         Ok(())
     }
 
     pub fn receive(&self, data: String) -> PyResult<()> {
-        println!("Hello there receive {}", data);
+        // println!("Hello there receive {}", data);
         Ok(())
     }
 
     pub fn disconnect(&self, code: Option<u16>, reason: Option<String>) -> PyResult<()> {
-        if let (Some(code), Some(reason)) = (code, reason) {
-            println!("Hello there disconnect {}: {}", code, reason);
-        }
+        // if let (Some(code), Some(reason)) = (code, reason) {
+        //     println!("Hello there disconnect {}: {}", code, reason);
+        // }
         Ok(())
     }
 
@@ -82,8 +75,13 @@ impl SocketView {
         let instance: Bound<SocketView> = cls.call1((group.clone(),))?.extract()?;
 
         let registry = get_registry();
-        registry.lock().unwrap().insert(group, instance.into());
-        drop(registry);
+        let rt = RUNTIME.get_or_init(|| Runtime::new().expect("Unable to create tokio runtime"));
+        rt.block_on(async {
+            registry
+                .write()
+                .await
+                .insert(group, Arc::new(instance.into()));
+        });
 
         let view = move |args: &Bound<'_, PyTuple>,
                          _kwargs: Option<&Bound<'_, PyDict>>|
@@ -125,106 +123,98 @@ impl SocketView {
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 enum BroadcastMessage {
-    Text(String, String),
-    Binary(String, Vec<u8>),
-    Close(String),
+    Text(Arc<str>, Arc<str>),
+    Binary(Arc<str>, Arc<[u8]>),
+    Close(Arc<str>),
 }
 
-#[derive(Clone)]
-struct AppState {
-    tx: broadcast::Sender<BroadcastMessage>,
+#[derive(Deserialize)]
+struct Params {
+    group: String,
 }
 
-async fn handle_socket(mut socket: WebSocket, who: SocketAddr, group: String, state: AppState) {
-    if socket
-        .send(Message::Ping(Bytes::from_static(&[1, 2, 3])))
-        .await
-        .is_ok()
-    {
-        tracing::info!("Pinged {who}...");
-    } else {
-        tracing::error!("Could not send ping {who}!");
-        return;
-    }
+async fn fast_handle_client(
+    fut: upgrade::UpgradeFut,
+    who: SocketAddr,
+    group: String,
+) -> Result<(), WebSocketError> {
+    let group_arc: Arc<str> = group.clone().into();
+    let ws = fut.await?;
+    let (reader, mut writer) = ws.split(tokio::io::split);
+    let mut reader = fastwebsockets::FragmentCollectorRead::new(reader);
 
-    let mut rx = state.tx.subscribe();
-    let (mut sender, mut receiver) = socket.split();
+    let broadcast_group = Arc::clone(&group_arc);
 
-    let bgroup = group.clone();
     let mut broadcast_task = tokio::spawn(async move {
+        let mut rx = BROADCAST_TX.get().unwrap().subscribe();
+
         while let Ok(msg) = rx.recv().await {
             match msg {
-                BroadcastMessage::Text(group_name, text) if group_name == bgroup => {
-                    if sender.send(Message::Text(text.into())).await.is_err() {
+                BroadcastMessage::Text(group, text)
+                    if group.as_ref() == broadcast_group.as_ref() =>
+                {
+                    let frame = Frame::text(fastwebsockets::Payload::Borrowed(text.as_bytes()));
+                    if writer.write_frame(frame).await.is_err() {
                         break;
                     }
                 }
-                BroadcastMessage::Binary(group_name, data) if group_name == bgroup => {
-                    if sender.send(Message::Binary(data.into())).await.is_err() {
+                BroadcastMessage::Binary(group, data)
+                    if group.as_ref() == broadcast_group.as_ref() =>
+                {
+                    let frame = Frame::binary(fastwebsockets::Payload::Borrowed(&data));
+                    if writer.write_frame(frame).await.is_err() {
                         break;
                     }
                 }
-                BroadcastMessage::Close(group_name) if group_name == bgroup => {
-                    let _ = sender.send(Message::Close(None)).await;
+                BroadcastMessage::Close(group_name)
+                    if group_name.as_ref() == broadcast_group.as_ref() =>
+                {
+                    // let frame = Frame::close(code, reason);
+                    // if tx.write_frame(frame).await.is_err() {
+                    //     break;
+                    // }
                     break;
                 }
-                _ => {}
+                _ => continue,
             }
         }
     });
 
+    let group_receive = Arc::clone(&group_arc);
+
     let mut receive_task = tokio::spawn(async move {
         loop {
-            if let Some(msg) = receiver.next().await {
-                match msg {
-                    Ok(Message::Text(t)) => {
-                        let _ = Python::with_gil(|py| -> PyResult<()> {
-                            let registry = get_registry();
-                            if let Some(handler) = registry.lock().unwrap().get(&group) {
-                                handler.bind(py).call_method1(
-                                    "dispatch",
-                                    (DispatchMethod::Receive(t.to_string()),),
-                                )?;
-                            }
-                            Ok(())
-                        });
-                    }
-                    Ok(Message::Binary(b)) => {
-                        // let _ = Python::with_gil(|py| -> PyResult<()> {
-                        //     let registry = get_registry();
-                        //     if let Some(handler) = registry.lock().unwrap().get("chat") {
-                        //         handler.bind(py).call_method1(
-                        //             "dispatch",
-                        //             (DispatchMethod::Receive(b.str),),
-                        //         )?;
-                        //     }
-                        //     Ok(())
-                        // });
-                    }
-                    Ok(Message::Close(c)) => {
-                        let mut dc_data: Option<(u16, String)> = None;
-                        if let Some(cf) = c {
-                            dc_data = Some((cf.code, cf.reason.as_str().to_string()));
-                        }
+            let frame = reader
+                .read_frame::<_, WebSocketError>(&mut |_| async { Ok(()) })
+                .await;
 
-                        let _ = Python::with_gil(|py| -> PyResult<()> {
-                            let registry = get_registry();
-                            if let Some(handler) = registry.lock().unwrap().get(&group) {
-                                handler.bind(py).call_method1(
-                                    "dispatch",
-                                    (DispatchMethod::Disconnect(dc_data),),
-                                )?;
-                            }
-                            Ok(())
-                        });
-                        break;
-                    }
-                    Err(e) => {
-                        println!("client {who} abruptly disconnected {e}");
-                        break;
+            match frame {
+                Ok(frame) => match frame.opcode {
+                    OpCode::Close => break,
+                    OpCode::Text | OpCode::Binary => {
+                        let text = String::from_utf8_lossy(&frame.payload).to_string();
+                        let handler = get_registry()
+                            .read()
+                            .await
+                            .get(group_receive.as_ref())
+                            .cloned();
+
+                        if let Some(handler) = handler {
+                            tokio::task::spawn_blocking(move || {
+                                Python::with_gil(|py| -> PyResult<()> {
+                                    handler.bind(py).call_method1(
+                                        "dispatch",
+                                        (DispatchMethod::Receive(text.to_string()),),
+                                    )?;
+                                    Ok(())
+                                })
+                                .ok();
+                            });
+                        }
                     }
                     _ => {}
-                }
+                },
+                Err(_) => break,
             }
         }
     });
@@ -239,29 +229,23 @@ async fn handle_socket(mut socket: WebSocket, who: SocketAddr, group: String, st
     }
 
     tracing::info!("Websocket context {who} destroyed");
+    Ok(())
 }
 
-#[derive(Deserialize)]
-struct Params {
-    group: String,
-}
-
-async fn ws_handler(
-    ws: WebSocketUpgrade,
+async fn fast_ws_handler(
+    ws: upgrade::IncomingUpgrade,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(params): Query<Params>,
-    State(state): State<AppState>,
 ) -> impl IntoResponse {
-    let _ = Python::with_gil(|py| -> PyResult<()> {
-        let registry = get_registry();
-        if let Some(handler) = registry.lock().unwrap().get("chat") {
-            handler
-                .bind(py)
-                .call_method1("dispatch", (DispatchMethod::Connect(),))?;
+    let (response, fut) = ws.upgrade().unwrap();
+
+    tokio::spawn(async move {
+        if let Err(e) = fast_handle_client(fut, addr, params.group).await {
+            eprintln!("Error in websocket connection: {}", e);
         }
-        Ok(())
     });
-    ws.on_upgrade(move |socket| handle_socket(socket, addr, params.group, state))
+
+    response
 }
 
 #[pyfunction]
@@ -271,17 +255,19 @@ fn start_server() -> PyResult<()> {
         return Ok(());
     }
 
+    let rt = RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .build()
+            .expect("Unable to create tokio runtime")
+    });
+
     std::thread::spawn(move || {
-        let rt = Runtime::new().expect("Unable to create tokio runtime");
-        let (tx, _rx) = broadcast::channel::<BroadcastMessage>(10000);
+        let (tx, _rx) = broadcast::channel::<BroadcastMessage>(100000);
 
         BROADCAST_TX.get_or_init(|| tx.clone());
 
-        let app_state = AppState { tx: tx.clone() };
-        rt.block_on(async move {
-            let app = Router::new()
-                .route("/ws", any(ws_handler))
-                .with_state(app_state);
+        rt.block_on(async {
+            let app = Router::new().route("/ws", any(fast_ws_handler));
 
             let listener = tokio::net::TcpListener::bind("127.0.0.1:6969")
                 .await
@@ -306,11 +292,13 @@ fn broadcast_text(groups: Vec<String>, msg: String) -> PyResult<HashMap<String, 
         .get()
         .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("Server not started"))?;
 
-    let mut receiver_counts = HashMap::new();
+    let msg_arc: Arc<str> = msg.into();
+    let mut receiver_counts = HashMap::with_capacity(groups.len());
 
     for group in groups {
+        let group_arc: Arc<str> = group.clone().into();
         let receiver_count = tx
-            .send(BroadcastMessage::Text(group.clone(), msg.clone()))
+            .send(BroadcastMessage::Text(group_arc, Arc::clone(&msg_arc)))
             .map_err(|e| {
                 PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
                     "Broadcast failed: {}",
