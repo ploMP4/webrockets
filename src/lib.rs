@@ -2,29 +2,24 @@ use fastwebsockets::{upgrade, Frame, OpCode, WebSocketError};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, LazyLock, OnceLock};
 
 use axum::extract::connect_info::ConnectInfo;
 use axum::extract::Query;
 use axum::{response::IntoResponse, routing::any, Router};
-use pyo3::types::{PyCFunction, PyDict, PyTuple, PyType};
-use pyo3::{intern, prelude::*};
+use pyo3::prelude::*;
+use pyo3::types::PyFunction;
 use serde::Deserialize;
 use tokio::runtime::Runtime;
 use tokio::sync::{broadcast, RwLock};
 
 type Registry = Arc<RwLock<HashMap<String, Arc<Py<SocketView>>>>>;
 
-static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 static SERVER_STARTED: AtomicBool = AtomicBool::new(false);
+static REGISTRY: LazyLock<Registry> = LazyLock::new(|| Arc::new(RwLock::new(HashMap::new())));
 static BROADCAST_TX: OnceLock<broadcast::Sender<BroadcastMessage>> = OnceLock::new();
-static REGISTRY: OnceLock<Registry> = OnceLock::new();
-
-fn get_registry() -> Registry {
-    REGISTRY
-        .get_or_init(|| Arc::new(RwLock::new(HashMap::new())))
-        .clone()
-}
+static RUNTIME: LazyLock<Runtime> =
+    LazyLock::new(|| Runtime::new().expect("Unable to create tokio runtime"));
 
 #[pyclass]
 enum DispatchMethod {
@@ -33,89 +28,77 @@ enum DispatchMethod {
     Disconnect(Option<(u16, String)>),
 }
 
-#[pyclass(subclass)]
-#[derive(Clone)]
+#[pyclass]
 #[allow(dead_code)]
 struct SocketView {
-    pub group: String,
+    group: String,
+    connect_callback: Option<Py<PyFunction>>,
+    receive_callback: Option<Py<PyFunction>>,
+    disconnect_callback: Option<Py<PyFunction>>,
 }
 
 #[pymethods]
 impl SocketView {
     #[new]
-    fn __new__(group: String) -> Self {
-        Self { group: group }
-    }
+    fn __new__(group: String, py: Python<'_>) -> PyResult<Py<Self>> {
+        let instance = Py::new(
+            py,
+            Self {
+                group: group.clone(),
+                connect_callback: None,
+                receive_callback: None,
+                disconnect_callback: None,
+            },
+        )?;
 
-    pub fn connect(&self) -> PyResult<()> {
-        // println!("Hello there connect");
-        Ok(())
-    }
-
-    pub fn receive(&self, data: String) -> PyResult<()> {
-        // println!("Hello there receive {}", data);
-        Ok(())
-    }
-
-    pub fn disconnect(&self, code: Option<u16>, reason: Option<String>) -> PyResult<()> {
-        // if let (Some(code), Some(reason)) = (code, reason) {
-        //     println!("Hello there disconnect {}: {}", code, reason);
-        // }
-        Ok(())
-    }
-
-    #[classmethod]
-    fn as_view<'a>(cls: &Bound<'a, PyType>) -> PyResult<Bound<'a, PyCFunction>> {
-        let module = Python::import(cls.py(), "django.http")?;
-        let http_request_class = module.getattr("HttpResponse")?.unbind();
-
-        let group: String = cls.getattr("group")?.extract()?;
-
-        let url = format!("http://localhost:6969/ws?group={}", group);
-        let instance: Bound<SocketView> = cls.call1((group.clone(),))?.extract()?;
-
-        let registry = get_registry();
-        let rt = RUNTIME.get_or_init(|| Runtime::new().expect("Unable to create tokio runtime"));
-        rt.block_on(async {
-            registry
+        RUNTIME.block_on(async {
+            REGISTRY
                 .write()
                 .await
-                .insert(group, Arc::new(instance.into()));
+                .insert(group, Arc::new(instance.clone_ref(py)));
         });
 
-        let view = move |args: &Bound<'_, PyTuple>,
-                         _kwargs: Option<&Bound<'_, PyDict>>|
-              -> PyResult<PyObject> {
-            let py = args.py();
-
-            let http_request_class = http_request_class.bind(py);
-
-            let kwargs = PyDict::new(py);
-            kwargs.set_item("status", 307)?;
-
-            let instance = http_request_class.call((), Some(&kwargs))?;
-            instance.set_item("Location", url.clone())?;
-
-            Ok(instance.into())
-        };
-
-        let view = PyCFunction::new_closure(cls.py(), None, None, view)?;
-        view.setattr(intern!(view.py(), "__module__"), "django_wsrs")?;
-
-        Ok(view)
+        Ok(instance)
     }
 
-    fn dispatch(slf: PyRef<'_, Self>, method: &DispatchMethod) -> PyResult<()> {
-        let py = slf.py();
-        let obj = slf.into_pyobject(py)?;
+    fn connect(&mut self, py: Python<'_>, func: Py<PyFunction>) -> PyResult<Py<PyFunction>> {
+        self.connect_callback = Some(func.clone_ref(py));
+        Ok(func)
+    }
+
+    fn receive(&mut self, py: Python<'_>, func: Py<PyFunction>) -> PyResult<Py<PyFunction>> {
+        self.receive_callback = Some(func.clone_ref(py));
+        Ok(func)
+    }
+
+    fn disconnect(&mut self, py: Python<'_>, func: Py<PyFunction>) -> PyResult<Py<PyFunction>> {
+        self.disconnect_callback = Some(func.clone_ref(py));
+        Ok(func)
+    }
+
+    fn dispatch(&self, py: Python<'_>, method: &DispatchMethod) -> PyResult<()> {
         match method {
-            DispatchMethod::Connect() => obj.call_method0("connect"),
-            DispatchMethod::Receive(data) => obj.call_method1("receive", (data,)),
-            DispatchMethod::Disconnect(Some((code, reason))) => {
-                obj.call_method1("disconnect", (code, reason))
+            DispatchMethod::Connect() => {
+                if let Some(cb) = &self.connect_callback {
+                    cb.call0(py)?;
+                }
             }
-            DispatchMethod::Disconnect(None) => obj.call_method0("disconnect"),
-        }?;
+            DispatchMethod::Receive(data) => {
+                if let Some(cb) = &self.receive_callback {
+                    cb.call1(py, (data,))?;
+                }
+            }
+            DispatchMethod::Disconnect(Some((code, reason))) => {
+                if let Some(cb) = &self.disconnect_callback {
+                    cb.call1(py, (code, reason))?;
+                }
+            }
+            DispatchMethod::Disconnect(None) => {
+                if let Some(cb) = &self.disconnect_callback {
+                    cb.call0(py)?;
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -193,20 +176,14 @@ async fn fast_handle_client(
                     OpCode::Close => break,
                     OpCode::Text | OpCode::Binary => {
                         let text = String::from_utf8_lossy(&frame.payload).to_string();
-                        let handler = get_registry()
-                            .read()
-                            .await
-                            .get(group_receive.as_ref())
-                            .cloned();
+                        let handler = REGISTRY.read().await.get(group_receive.as_ref()).cloned();
 
                         if let Some(handler) = handler {
                             tokio::task::spawn_blocking(move || {
                                 Python::with_gil(|py| -> PyResult<()> {
-                                    handler.bind(py).call_method1(
-                                        "dispatch",
-                                        (DispatchMethod::Receive(text.to_string()),),
-                                    )?;
-                                    Ok(())
+                                    handler
+                                        .borrow(py)
+                                        .dispatch(py, &DispatchMethod::Receive(text.to_string()))
                                 })
                                 .ok();
                             });
@@ -255,18 +232,12 @@ fn start_server() -> PyResult<()> {
         return Ok(());
     }
 
-    let rt = RUNTIME.get_or_init(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .build()
-            .expect("Unable to create tokio runtime")
-    });
-
     std::thread::spawn(move || {
         let (tx, _rx) = broadcast::channel::<BroadcastMessage>(100000);
 
         BROADCAST_TX.get_or_init(|| tx.clone());
 
-        rt.block_on(async {
+        RUNTIME.block_on(async {
             let app = Router::new().route("/ws", any(fast_ws_handler));
 
             let listener = tokio::net::TcpListener::bind("127.0.0.1:6969")
@@ -313,9 +284,13 @@ fn broadcast_text(groups: Vec<String>, msg: String) -> PyResult<HashMap<String, 
 }
 
 #[pymodule]
-fn django_wsrs(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<SocketView>()?;
-    m.add_function(wrap_pyfunction!(start_server, m)?)?;
-    m.add_function(wrap_pyfunction!(broadcast_text, m)?)?;
-    Ok(())
+mod django_wsrs {
+    #[pymodule_export]
+    use super::SocketView;
+
+    #[pymodule_export]
+    use super::start_server;
+
+    #[pymodule_export]
+    use super::broadcast_text;
 }
