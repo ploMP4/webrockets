@@ -61,19 +61,19 @@ impl SocketView {
         Ok(instance)
     }
 
-    fn connect(&mut self, py: Python<'_>, func: Py<PyFunction>) -> PyResult<Py<PyFunction>> {
+    fn connect(&mut self, py: Python<'_>, func: Py<PyFunction>) -> Py<PyFunction> {
         self.connect_callback = Some(func.clone_ref(py));
-        Ok(func)
+        func
     }
 
-    fn receive(&mut self, py: Python<'_>, func: Py<PyFunction>) -> PyResult<Py<PyFunction>> {
+    fn receive(&mut self, py: Python<'_>, func: Py<PyFunction>) -> Py<PyFunction> {
         self.receive_callback = Some(func.clone_ref(py));
-        Ok(func)
+        func
     }
 
-    fn disconnect(&mut self, py: Python<'_>, func: Py<PyFunction>) -> PyResult<Py<PyFunction>> {
+    fn disconnect(&mut self, py: Python<'_>, func: Py<PyFunction>) -> Py<PyFunction> {
         self.disconnect_callback = Some(func.clone_ref(py));
-        Ok(func)
+        func
     }
 
     fn dispatch(&self, py: Python<'_>, method: &DispatchMethod) -> PyResult<()> {
@@ -180,7 +180,7 @@ async fn fast_handle_client(
 
                         if let Some(handler) = handler {
                             tokio::task::spawn_blocking(move || {
-                                Python::with_gil(|py| -> PyResult<()> {
+                                Python::attach(|py| -> PyResult<()> {
                                     handler
                                         .borrow(py)
                                         .dispatch(py, &DispatchMethod::Receive(text.to_string()))
@@ -218,7 +218,7 @@ async fn fast_ws_handler(
 
     tokio::spawn(async move {
         if let Err(e) = fast_handle_client(fut, addr, params.group).await {
-            eprintln!("Error in websocket connection: {}", e);
+            tracing::error!("Error in websocket connection: {}", e);
         }
     });
 
@@ -226,18 +226,22 @@ async fn fast_ws_handler(
 }
 
 #[pyfunction]
-fn start_server() -> PyResult<()> {
+fn run_server(py: Python<'_>) -> PyResult<()> {
     if SERVER_STARTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
-        println!("Server already started, skipping...");
+        tracing::info!("Server already started, skipping...");
         return Ok(());
     }
 
-    std::thread::spawn(move || {
-        let (tx, _rx) = broadcast::channel::<BroadcastMessage>(100000);
+    let (tx, _rx) = broadcast::channel::<BroadcastMessage>(100000);
 
-        BROADCAST_TX.get_or_init(|| tx.clone());
+    BROADCAST_TX.get_or_init(|| tx.clone());
 
+    py.detach(|| {
         RUNTIME.block_on(async {
+            tracing_subscriber::fmt()
+                .with_max_level(tracing::Level::DEBUG)
+                .init();
+
             let app = Router::new().route("/ws", any(fast_ws_handler));
 
             let listener = tokio::net::TcpListener::bind("127.0.0.1:6969")
@@ -250,11 +254,54 @@ fn start_server() -> PyResult<()> {
                 listener,
                 app.into_make_service_with_connect_info::<SocketAddr>(),
             )
+            .with_graceful_shutdown(async {
+                SERVER_STARTED.swap(false, std::sync::atomic::Ordering::SeqCst);
+                tokio::signal::ctrl_c()
+                    .await
+                    .expect("failed to install Ctrl-C handler");
+
+                tracing::info!("Exit signal received, shutting down...");
+            })
             .await
             .unwrap();
         });
     });
+
     Ok(())
+}
+
+#[pyclass]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum LogLevel {
+    DEBUG,
+    INFO,
+    WARN,
+    ERROR,
+}
+
+#[pyfunction]
+fn log(level: LogLevel, msg: &str) {
+    match level {
+        LogLevel::DEBUG => tracing::debug!(msg),
+        LogLevel::INFO => tracing::info!(msg),
+        LogLevel::WARN => tracing::warn!(msg),
+        LogLevel::ERROR => tracing::error!(msg),
+    }
+}
+
+#[pymodule]
+mod django_wsrs {
+    #[pymodule_export]
+    use super::log;
+    #[pymodule_export]
+    use super::run_server;
+    #[pymodule_export]
+    use super::LogLevel;
+    #[pymodule_export]
+    use super::SocketView;
+
+    #[pymodule_export]
+    use super::broadcast_text;
 }
 
 #[pyfunction]
@@ -281,16 +328,4 @@ fn broadcast_text(groups: Vec<String>, msg: String) -> PyResult<HashMap<String, 
     }
 
     Ok(receiver_counts)
-}
-
-#[pymodule]
-mod django_wsrs {
-    #[pymodule_export]
-    use super::SocketView;
-
-    #[pymodule_export]
-    use super::start_server;
-
-    #[pymodule_export]
-    use super::broadcast_text;
 }
