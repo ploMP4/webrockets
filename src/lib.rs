@@ -1,8 +1,8 @@
 use fastwebsockets::{upgrade, Frame, OpCode, WebSocketError};
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, LazyLock, OnceLock};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, LazyLock};
 
 use axum::extract::connect_info::ConnectInfo;
 use axum::extract::Query;
@@ -11,26 +11,66 @@ use pyo3::prelude::*;
 use pyo3::types::PyFunction;
 use serde::Deserialize;
 use tokio::runtime::Runtime;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{mpsc, RwLock};
 
-type Registry = Arc<RwLock<HashMap<String, Arc<Py<SocketView>>>>>;
+type Registry = RwLock<HashMap<String, Arc<Py<SocketView>>>>;
 
 static SERVER_STARTED: AtomicBool = AtomicBool::new(false);
-static REGISTRY: LazyLock<Registry> = LazyLock::new(|| Arc::new(RwLock::new(HashMap::new())));
-static BROADCAST_TX: OnceLock<broadcast::Sender<BroadcastMessage>> = OnceLock::new();
+static REGISTRY: LazyLock<Registry> = LazyLock::new(|| RwLock::new(HashMap::new()));
+static CHANNELS: LazyLock<ChannelStore> = LazyLock::new(|| ChannelStore::new());
 static RUNTIME: LazyLock<Runtime> =
     LazyLock::new(|| Runtime::new().expect("Unable to create tokio runtime"));
+
+struct ChannelStore {
+    next_id: AtomicU64,
+    data: RwLock<HashMap<u64, mpsc::Sender<Message>>>,
+}
+
+impl ChannelStore {
+    fn new() -> Self {
+        Self {
+            next_id: AtomicU64::new(1),
+            data: RwLock::new(HashMap::new()),
+        }
+    }
+
+    async fn insert(&self, value: mpsc::Sender<Message>) -> u64 {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        self.data.write().await.insert(id, value);
+        id
+    }
+
+    async fn remove(&self, id: u64) {
+        self.data.write().await.remove(&id);
+    }
+
+    async fn send(&self, id: u64, msg: Message) -> anyhow::Result<()> {
+        if let Some(chan) = self.data.read().await.get(&id) {
+            chan.send(msg).await?;
+        };
+        Ok(())
+    }
+
+    async fn broadcast(&self, msg: Message) -> anyhow::Result<()> {
+        let map = self.data.read().await;
+        for tx in map.values() {
+            let _ = tx.send(msg.clone()).await?;
+        }
+        Ok(())
+    }
+}
 
 #[pyclass]
 enum DispatchMethod {
     Connect(),
-    Receive(String),
+    Receive(u64, String),
     Disconnect(Option<(u16, String)>),
 }
 
 #[pyclass]
 #[allow(dead_code)]
 struct SocketView {
+    path: String,
     group: String,
     connect_callback: Option<Py<PyFunction>>,
     receive_callback: Option<Py<PyFunction>>,
@@ -40,10 +80,11 @@ struct SocketView {
 #[pymethods]
 impl SocketView {
     #[new]
-    fn __new__(group: String, py: Python<'_>) -> PyResult<Py<Self>> {
+    fn __new__(py: Python<'_>, path: String, group: String) -> PyResult<Py<Self>> {
         let instance = Py::new(
             py,
             Self {
+                path: path,
                 group: group.clone(),
                 connect_callback: None,
                 receive_callback: None,
@@ -51,11 +92,11 @@ impl SocketView {
             },
         )?;
 
-        RUNTIME.block_on(async {
-            REGISTRY
-                .write()
-                .await
-                .insert(group, Arc::new(instance.clone_ref(py)));
+        let instance_ref = instance.clone_ref(py);
+        py.detach(|| {
+            RUNTIME.block_on(async {
+                REGISTRY.write().await.insert(group, Arc::new(instance_ref));
+            });
         });
 
         Ok(instance)
@@ -83,9 +124,9 @@ impl SocketView {
                     cb.call0(py)?;
                 }
             }
-            DispatchMethod::Receive(data) => {
+            DispatchMethod::Receive(cid, data) => {
                 if let Some(cb) = &self.receive_callback {
-                    cb.call1(py, (data,))?;
+                    cb.call1(py, (cid, data))?;
                 }
             }
             DispatchMethod::Disconnect(Some((code, reason))) => {
@@ -105,7 +146,7 @@ impl SocketView {
 
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
-enum BroadcastMessage {
+enum Message {
     Text(Arc<str>, Arc<str>),
     Binary(Arc<str>, Arc<[u8]>),
     Close(Arc<str>),
@@ -122,36 +163,30 @@ async fn fast_handle_client(
     group: String,
 ) -> Result<(), WebSocketError> {
     let group_arc: Arc<str> = group.clone().into();
-    let ws = fut.await?;
-    let (reader, mut writer) = ws.split(tokio::io::split);
+    let (reader, mut writer) = fut.await?.split(tokio::io::split);
     let mut reader = fastwebsockets::FragmentCollectorRead::new(reader);
 
-    let broadcast_group = Arc::clone(&group_arc);
+    let (tx, mut rx) = mpsc::channel(100000);
+    let cid = CHANNELS.insert(tx).await;
 
-    let mut broadcast_task = tokio::spawn(async move {
-        let mut rx = BROADCAST_TX.get().unwrap().subscribe();
+    let group_send = Arc::clone(&group_arc);
 
-        while let Ok(msg) = rx.recv().await {
+    let mut send_task = RUNTIME.spawn(async move {
+        while let Some(msg) = rx.recv().await {
             match msg {
-                BroadcastMessage::Text(group, text)
-                    if group.as_ref() == broadcast_group.as_ref() =>
-                {
+                Message::Text(group, text) if group.as_ref() == group_send.as_ref() => {
                     let frame = Frame::text(fastwebsockets::Payload::Borrowed(text.as_bytes()));
                     if writer.write_frame(frame).await.is_err() {
                         break;
                     }
                 }
-                BroadcastMessage::Binary(group, data)
-                    if group.as_ref() == broadcast_group.as_ref() =>
-                {
+                Message::Binary(group, data) if group.as_ref() == group_send.as_ref() => {
                     let frame = Frame::binary(fastwebsockets::Payload::Borrowed(&data));
                     if writer.write_frame(frame).await.is_err() {
                         break;
                     }
                 }
-                BroadcastMessage::Close(group_name)
-                    if group_name.as_ref() == broadcast_group.as_ref() =>
-                {
+                Message::Close(group) if group.as_ref() == group_send.as_ref() => {
                     // let frame = Frame::close(code, reason);
                     // if tx.write_frame(frame).await.is_err() {
                     //     break;
@@ -165,7 +200,7 @@ async fn fast_handle_client(
 
     let group_receive = Arc::clone(&group_arc);
 
-    let mut receive_task = tokio::spawn(async move {
+    let mut receive_task = RUNTIME.spawn(async move {
         loop {
             let frame = reader
                 .read_frame::<_, WebSocketError>(&mut |_| async { Ok(()) })
@@ -179,11 +214,12 @@ async fn fast_handle_client(
                         let handler = REGISTRY.read().await.get(group_receive.as_ref()).cloned();
 
                         if let Some(handler) = handler {
-                            tokio::task::spawn_blocking(move || {
+                            RUNTIME.spawn(async move {
                                 Python::attach(|py| -> PyResult<()> {
-                                    handler
-                                        .borrow(py)
-                                        .dispatch(py, &DispatchMethod::Receive(text.to_string()))
+                                    handler.borrow(py).dispatch(
+                                        py,
+                                        &DispatchMethod::Receive(cid, text.to_string()),
+                                    )
                                 })
                                 .ok();
                             });
@@ -197,15 +233,16 @@ async fn fast_handle_client(
     });
 
     tokio::select! {
-        _ = &mut broadcast_task => {
+        _ = &mut send_task => {
             receive_task.abort();
         }
         _ = &mut receive_task => {
-            broadcast_task.abort();
+            send_task.abort();
         }
     }
 
     tracing::info!("Websocket context {who} destroyed");
+    CHANNELS.remove(cid).await;
     Ok(())
 }
 
@@ -216,7 +253,7 @@ async fn fast_ws_handler(
 ) -> impl IntoResponse {
     let (response, fut) = ws.upgrade().unwrap();
 
-    tokio::spawn(async move {
+    RUNTIME.spawn(async move {
         if let Err(e) = fast_handle_client(fut, addr, params.group).await {
             tracing::error!("Error in websocket connection: {}", e);
         }
@@ -227,16 +264,12 @@ async fn fast_ws_handler(
 
 #[pyfunction]
 fn run_server(py: Python<'_>) -> PyResult<()> {
-    if SERVER_STARTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
-        tracing::info!("Server already started, skipping...");
-        return Ok(());
-    }
-
-    let (tx, _rx) = broadcast::channel::<BroadcastMessage>(100000);
-
-    BROADCAST_TX.get_or_init(|| tx.clone());
-
     py.detach(|| {
+        if SERVER_STARTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            tracing::info!("Server already started, skipping...");
+            return;
+        }
+
         RUNTIME.block_on(async {
             tracing_subscriber::fmt()
                 .with_max_level(tracing::Level::DEBUG)
@@ -280,13 +313,13 @@ enum LogLevel {
 }
 
 #[pyfunction]
-fn log(level: LogLevel, msg: &str) {
-    match level {
+fn log(py: Python<'_>, level: LogLevel, msg: &str) {
+    py.detach(|| match level {
         LogLevel::DEBUG => tracing::debug!(msg),
         LogLevel::INFO => tracing::info!(msg),
         LogLevel::WARN => tracing::warn!(msg),
         LogLevel::ERROR => tracing::error!(msg),
-    }
+    });
 }
 
 #[pymodule]
@@ -304,28 +337,23 @@ mod django_wsrs {
     use super::broadcast_text;
 }
 
+// #[pyfunction]
+// fn send(cid: u64, msg: String) -> PyResult<()> {
+//     RUNTIME.block_on(async {
+//         CHANNELS.send(cid, msg);
+//     });
+//     Ok(())
+// }
+
 #[pyfunction]
-fn broadcast_text(groups: Vec<String>, msg: String) -> PyResult<HashMap<String, usize>> {
-    let tx = BROADCAST_TX
-        .get()
-        .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("Server not started"))?;
-
-    let msg_arc: Arc<str> = msg.into();
-    let mut receiver_counts = HashMap::with_capacity(groups.len());
-
-    for group in groups {
-        let group_arc: Arc<str> = group.clone().into();
-        let receiver_count = tx
-            .send(BroadcastMessage::Text(group_arc, Arc::clone(&msg_arc)))
-            .map_err(|e| {
-                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                    "Broadcast failed: {}",
-                    e
-                ))
-            })?;
-
-        receiver_counts.insert(group, receiver_count);
-    }
-
-    Ok(receiver_counts)
+fn broadcast_text(py: Python<'_>, groups: Vec<String>, msg: String) -> PyResult<()> {
+    py.detach(|| {
+        let msg: Arc<str> = msg.into();
+        for group in groups {
+            let group_arc: Arc<str> = group.clone().into();
+            RUNTIME
+                .spawn(CHANNELS.broadcast(Message::Text(Arc::clone(&group_arc), Arc::clone(&msg))));
+        }
+    });
+    Ok(())
 }
