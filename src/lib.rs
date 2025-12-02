@@ -1,15 +1,12 @@
 use fastwebsockets::{upgrade, Frame, OpCode, WebSocketError};
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use axum::extract::connect_info::ConnectInfo;
-use axum::extract::{Query, State};
-use axum::{response::IntoResponse, routing::get, Router};
+use axum::extract::State;
+use axum::{routing::get, Router};
 use pyo3::prelude::*;
 use pyo3::types::PyFunction;
-use serde::Deserialize;
 use tokio::runtime::Runtime;
 use tokio::sync::{mpsc, RwLock};
 
@@ -27,11 +24,6 @@ impl AppState {
     }
 }
 
-#[derive(Deserialize)]
-struct Params {
-    group: String,
-}
-
 #[derive(Debug)]
 #[allow(dead_code)]
 enum Message {
@@ -40,10 +32,11 @@ enum Message {
     Close(Arc<str>),
 }
 
-#[pyclass(frozen)]
+#[pyclass]
 struct WebsocketServer {
     rt: Runtime,
     state: Arc<AppState>,
+    context: Vec<(String, String)>,
 }
 
 impl WebsocketServer {
@@ -51,6 +44,7 @@ impl WebsocketServer {
         Self {
             rt: Runtime::new().expect("Unable to create tokio runtime"),
             state: Arc::new(AppState::new()),
+            context: Vec::new(),
         }
     }
 
@@ -60,9 +54,27 @@ impl WebsocketServer {
                 .with_max_level(tracing::Level::DEBUG)
                 .init();
 
-            let app = Router::new()
-                .route("/ws", get(WebsocketServer::handler))
-                .with_state(Arc::clone(&self.state));
+            let mut app = Router::new();
+            for (group, path) in &self.context {
+                let group = group.clone();
+                app = app.route(
+                        &format!("/{path}"),
+                        get(|ws: upgrade::IncomingUpgrade, State(state): State<Arc<AppState>>| async move {
+                                let (response, fut) = ws.upgrade().unwrap();
+
+                                tokio::spawn(async move {
+                                    if let Err(e) =
+                                        WebsocketServer::handle_client(fut, group, state).await
+                                    {
+                                        tracing::error!("Error in websocket connection: {}", e);
+                                    }
+                                });
+
+                                response
+                            },
+                        ),
+                    );
+            }
 
             let listener = tokio::net::TcpListener::bind("127.0.0.1:6969")
                 .await
@@ -70,42 +82,21 @@ impl WebsocketServer {
 
             tracing::debug!("listening on {}", listener.local_addr().unwrap());
 
-            axum::serve(
-                listener,
-                app.into_make_service_with_connect_info::<SocketAddr>(),
-            )
-            .with_graceful_shutdown(async {
-                tokio::signal::ctrl_c()
-                    .await
-                    .expect("failed to install Ctrl-C handler");
+            axum::serve(listener, app.with_state(Arc::clone(&self.state)))
+                .with_graceful_shutdown(async {
+                    tokio::signal::ctrl_c()
+                        .await
+                        .expect("failed to install Ctrl-C handler");
 
-                tracing::info!("Exit signal received, shutting down...");
-            })
-            .await
-            .unwrap();
+                    tracing::info!("Exit signal received, shutting down...");
+                })
+                .await
+                .unwrap();
         });
-    }
-
-    async fn handler(
-        ws: upgrade::IncomingUpgrade,
-        ConnectInfo(addr): ConnectInfo<SocketAddr>,
-        Query(params): Query<Params>,
-        State(state): State<Arc<AppState>>,
-    ) -> impl IntoResponse {
-        let (response, fut) = ws.upgrade().unwrap();
-
-        tokio::spawn(async move {
-            if let Err(e) = WebsocketServer::handle_client(fut, addr, params.group, state).await {
-                tracing::error!("Error in websocket connection: {}", e);
-            }
-        });
-
-        response
     }
 
     async fn handle_client(
         fut: upgrade::UpgradeFut,
-        who: SocketAddr,
         group: String,
         state: Arc<AppState>,
     ) -> Result<(), WebSocketError> {
@@ -204,15 +195,11 @@ impl WebsocketServer {
         });
 
         tokio::select! {
-            _ = &mut send_task => {
-                receive_task.abort();
-            }
-            _ = &mut receive_task => {
-                send_task.abort();
-            }
+            _ = &mut send_task =>  receive_task.abort(),
+            _ = &mut receive_task =>  send_task.abort(),
         }
 
-        tracing::info!("Websocket context {who} destroyed");
+        tracing::info!("Websocket context destroyed");
         state.channels.remove(cid).await;
         Ok(())
     }
@@ -225,7 +212,13 @@ impl WebsocketServer {
         Ok(())
     }
 
-    fn __call__(&self, py: Python<'_>, path: String, group: String) -> PyResult<Py<SocketView>> {
+    fn __call__(
+        &mut self,
+        py: Python<'_>,
+        path: String,
+        group: String,
+    ) -> PyResult<Py<SocketView>> {
+        self.context.push((group.clone(), path.clone()));
         let instance = Py::new(py, SocketView::new(path, group.clone()))?;
         let instance_ref = instance.clone_ref(py);
         py.detach(|| {
