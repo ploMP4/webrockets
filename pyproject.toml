@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "django-wsrs"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
@@ -14,6 +14,24 @@ dynamic = ["version"]
 dependencies = [
     "django>=4.2.25",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-django>=4.5",
+]
+
 [tool.maturin]
 features = ["pyo3/extension-module"]
 python-source = "python"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-django>=4.11.1",
+]

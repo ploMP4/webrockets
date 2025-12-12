@@ -4,9 +4,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use axum::extract::State;
+use axum::http::{HeaderMap, StatusCode, Uri};
+use axum::response::IntoResponse;
 use axum::{routing::get, Router};
-use pyo3::prelude::*;
 use pyo3::types::PyFunction;
+use pyo3::{exceptions, prelude::*};
 use tokio::runtime::Runtime;
 use tokio::sync::{mpsc, RwLock};
 
@@ -21,6 +23,47 @@ impl AppState {
             channels: ChannelStore::new(),
             registry: RwLock::new(HashMap::new()),
         }
+    }
+}
+
+#[pyclass]
+struct ConnectionScope {
+    #[pyo3(get)]
+    path: String,
+    #[pyo3(get)]
+    query_string: String,
+    #[pyo3(get)]
+    headers: HashMap<String, String>,
+    #[pyo3(get)]
+    cookies: HashMap<String, String>,
+    #[pyo3(get)]
+    user: Option<Py<PyAny>>,
+}
+
+#[pymethods]
+impl ConnectionScope {
+    #[new]
+    fn __new__(
+        path: String,
+        query_string: String,
+        headers: HashMap<String, String>,
+        cookies: HashMap<String, String>,
+    ) -> Self {
+        ConnectionScope {
+            path,
+            query_string,
+            headers,
+            cookies,
+            user: None,
+        }
+    }
+
+    fn get_cookie(&self, name: String) -> Option<&String> {
+        self.cookies.get(&name)
+    }
+
+    fn get_header(&self, name: String) -> Option<&String> {
+        self.headers.get(&name)
     }
 }
 
@@ -58,22 +101,54 @@ impl WebsocketServer {
             for (group, path) in &self.context {
                 let group = group.clone();
                 app = app.route(
-                        &format!("/{path}"),
-                        get(|ws: upgrade::IncomingUpgrade, State(state): State<Arc<AppState>>| async move {
-                                let (response, fut) = ws.upgrade().unwrap();
+                    &format!("/{path}"),
+                    get(
+                        |uri: Uri,
+                         headers: HeaderMap,
+                         ws: upgrade::IncomingUpgrade,
+                         State(state): State<Arc<AppState>>| async move {
+                            let scope = WebsocketServer::extract_scope(&uri, &headers);
 
-                                tokio::spawn(async move {
-                                    if let Err(e) =
-                                        WebsocketServer::handle_client(fut, group, state).await
-                                    {
-                                        tracing::error!("Error in websocket connection: {}", e);
-                                    }
-                                });
+                            let handler = state.registry.read().await.get(&group).cloned();
+                            if let Some(ref handler) = handler {
+                                if let AuthResult::Failed =
+                                    WebsocketServer::run_authentication(handler, &scope)
+                                {
+                                    return (
+                                        StatusCode::UNAUTHORIZED,
+                                        format!("Authentication failed"),
+                                    )
+                                        .into_response();
+                                }
 
-                                response
-                            },
-                        ),
-                    );
+                                if let Err(e) = Python::attach(|py| -> PyResult<()> {
+                                    handler
+                                        .borrow(py)
+                                        .dispatch(py, &DispatchMethod::Connect(scope.clone_ref(py)))
+                                }) {
+                                    tracing::error!("Error in websocket connect callback: {}", e);
+                                    return (
+                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                        format!("Connection failed"),
+                                    )
+                                        .into_response();
+                                }
+                            }
+
+                            let (response, fut) = ws.upgrade().unwrap();
+
+                            tokio::spawn(async move {
+                                if let Err(e) =
+                                    WebsocketServer::handle_client(fut, group, state, scope).await
+                                {
+                                    tracing::error!("Error in websocket connection: {}", e);
+                                }
+                            });
+
+                            response.into_response()
+                        },
+                    ),
+                );
             }
 
             let listener = tokio::net::TcpListener::bind("127.0.0.1:6969")
@@ -95,10 +170,73 @@ impl WebsocketServer {
         });
     }
 
+    fn extract_scope(uri: &Uri, header_map: &HeaderMap) -> Py<ConnectionScope> {
+        let path = uri.path().to_string();
+        let query_string = uri.query().unwrap_or("").to_string();
+
+        let mut headers = HashMap::new();
+        for (name, value) in header_map.iter() {
+            if let Ok(v) = value.to_str() {
+                headers.insert(name.as_str().to_lowercase(), v.to_string());
+            }
+        }
+
+        let mut cookies = HashMap::new();
+        if let Some(cookie_header) = header_map.get("cookie") {
+            if let Ok(cookie_str) = cookie_header.to_str() {
+                for cookie in cookie_str.split(';') {
+                    let cookie = cookie.trim();
+                    if let Some((name, value)) = cookie.split_once('=') {
+                        cookies.insert(name.trim().to_string(), value.trim().to_string());
+                    }
+                }
+            }
+        }
+
+        Python::attach(|py| -> Py<ConnectionScope> {
+            Py::new(
+                py,
+                ConnectionScope {
+                    path,
+                    headers,
+                    cookies,
+                    query_string,
+                    user: None,
+                },
+            )
+            .expect("Unable to create connection scope")
+        })
+    }
+
+    fn run_authentication(handler: &Py<SocketView>, scope: &Py<ConnectionScope>) -> AuthResult {
+        Python::attach(|py| -> AuthResult {
+            let view = handler.borrow(py);
+            let auth_classes = &view.authentication_classes;
+
+            if auth_classes.is_empty() {
+                return AuthResult::Success;
+            }
+
+            for authenticator in auth_classes {
+                let auth = authenticator
+                    .getattr(py, "authenticate")
+                    .expect(format!("There is no authenticate method, {}", authenticator).as_str());
+
+                if let Some(res) = auth.call1(py, (scope,)).ok().filter(|res| !res.is_none(py)) {
+                    scope.borrow_mut(py).user = Some(res);
+                    return AuthResult::Success;
+                }
+            }
+
+            AuthResult::Failed
+        })
+    }
+
     async fn handle_client(
         fut: upgrade::UpgradeFut,
         group: String,
         state: Arc<AppState>,
+        scope: Py<ConnectionScope>,
     ) -> Result<(), WebSocketError> {
         let group_arc: Arc<str> = group.clone().into();
         let (reader, mut writer) = fut.await?.split(tokio::io::split);
@@ -155,13 +293,11 @@ impl WebsocketServer {
                                 .get(group_arc.as_ref())
                                 .cloned()
                             {
-                                tokio::spawn(async move {
-                                    Python::attach(|py| {
-                                        handler
-                                            .borrow(py)
-                                            .dispatch(py, &DispatchMethod::Disconnect(None)) // TODO:
-                                            .ok();
-                                    });
+                                Python::attach(|py| {
+                                    handler.borrow(py).dispatch(
+                                        py,
+                                        &DispatchMethod::Disconnect(scope.clone_ref(py), None),
+                                    ) // TODO:
                                 });
                             }
                             break;
@@ -176,14 +312,15 @@ impl WebsocketServer {
                                 .cloned();
 
                             if let Some(handler) = handler {
-                                tokio::spawn(async move {
-                                    Python::attach(|py| -> PyResult<()> {
-                                        handler.borrow(py).dispatch(
-                                            py,
-                                            &DispatchMethod::Receive(cid, text.to_string()),
-                                        )
-                                    })
-                                    .ok();
+                                Python::attach(|py| {
+                                    handler.borrow(py).dispatch(
+                                        py,
+                                        &DispatchMethod::Receive(
+                                            scope.clone_ref(py),
+                                            cid,
+                                            text.to_string(),
+                                        ),
+                                    );
                                 });
                             }
                         }
@@ -205,6 +342,11 @@ impl WebsocketServer {
     }
 }
 
+enum AuthResult {
+    Success,
+    Failed,
+}
+
 #[pymethods]
 impl WebsocketServer {
     fn start(&self, py: Python<'_>) -> PyResult<()> {
@@ -217,9 +359,17 @@ impl WebsocketServer {
         py: Python<'_>,
         path: String,
         group: String,
+        authentication_classes: Option<Vec<Py<PyAny>>>,
     ) -> PyResult<Py<SocketView>> {
         self.context.push((group.clone(), path.clone()));
-        let instance = Py::new(py, SocketView::new(path, group.clone()))?;
+        let instance = Py::new(
+            py,
+            SocketView::new(
+                path,
+                group.clone(),
+                authentication_classes.unwrap_or(Vec::new()),
+            ),
+        )?;
         let instance_ref = instance.clone_ref(py);
         py.detach(|| {
             self.rt.block_on(async {
@@ -304,9 +454,9 @@ impl ChannelStore {
 
 #[pyclass(frozen)]
 enum DispatchMethod {
-    Connect(),
-    Receive(u64, String),
-    Disconnect(Option<(u16, String)>),
+    Connect(Py<ConnectionScope>),
+    Receive(Py<ConnectionScope>, u64, String),
+    Disconnect(Py<ConnectionScope>, Option<(u16, String)>),
 }
 
 #[pyclass]
@@ -315,16 +465,18 @@ struct SocketView {
     path: String,
     #[pyo3(get)]
     group: String,
+    authentication_classes: Vec<Py<PyAny>>,
     connect_callback: Option<Py<PyFunction>>,
     receive_callback: Option<Py<PyFunction>>,
     disconnect_callback: Option<Py<PyFunction>>,
 }
 
 impl SocketView {
-    fn new(path: String, group: String) -> Self {
+    fn new(path: String, group: String, authentication_classes: Vec<Py<PyAny>>) -> Self {
         Self {
             path: path,
             group: group,
+            authentication_classes: authentication_classes,
             connect_callback: None,
             receive_callback: None,
             disconnect_callback: None,
@@ -351,24 +503,24 @@ impl SocketView {
 
     fn dispatch(&self, py: Python<'_>, method: &DispatchMethod) -> PyResult<()> {
         match method {
-            DispatchMethod::Connect() => {
+            DispatchMethod::Connect(scope) => {
                 if let Some(cb) = &self.connect_callback {
-                    cb.call0(py)?;
+                    cb.call1(py, (scope,))?;
                 }
             }
-            DispatchMethod::Receive(cid, data) => {
+            DispatchMethod::Receive(scope, cid, data) => {
                 if let Some(cb) = &self.receive_callback {
-                    cb.call1(py, (cid, data))?;
+                    cb.call1(py, (scope, cid, data))?;
                 }
             }
-            DispatchMethod::Disconnect(Some((code, reason))) => {
+            DispatchMethod::Disconnect(scope, Some((code, reason))) => {
                 if let Some(cb) = &self.disconnect_callback {
-                    cb.call1(py, (code, reason))?;
+                    cb.call1(py, (scope, code, reason))?;
                 }
             }
-            DispatchMethod::Disconnect(None) => {
+            DispatchMethod::Disconnect(scope, None) => {
                 if let Some(cb) = &self.disconnect_callback {
-                    cb.call0(py)?;
+                    cb.call1(py, (scope,))?;
                 }
             }
         }
@@ -376,23 +528,17 @@ impl SocketView {
     }
 }
 
-#[pyclass(frozen)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-enum LogLevel {
-    DEBUG,
-    INFO,
-    WARN,
-    ERROR,
-}
-
 #[pyfunction]
-fn log(py: Python<'_>, level: LogLevel, msg: &str) {
-    py.detach(|| match level {
-        LogLevel::DEBUG => tracing::debug!(msg),
-        LogLevel::INFO => tracing::info!(msg),
-        LogLevel::WARN => tracing::warn!(msg),
-        LogLevel::ERROR => tracing::error!(msg),
-    });
+fn log(level: &str, msg: &str) -> PyResult<()> {
+    match level {
+        "debug" => Ok(tracing::debug!(msg)),
+        "info" => Ok(tracing::info!(msg)),
+        "warn" => Ok(tracing::warn!(msg)),
+        "error" => Ok(tracing::error!(msg)),
+        _ => Err(exceptions::PyRuntimeError::new_err(
+            "Invalid level value, allowed: debug, info, warn, error",
+        )),
+    }
 }
 
 #[pymodule]
@@ -402,7 +548,7 @@ mod django_wsrs {
     #[pymodule_export]
     use super::log;
     #[pymodule_export]
-    use super::LogLevel;
+    use super::ConnectionScope;
     #[pymodule_export]
     use super::SocketView;
     #[pymodule_export]
