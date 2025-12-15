@@ -314,7 +314,9 @@ dependencies = [
  "fastwebsockets",
  "futures-util",
  "headers",
+ "log",
  "pyo3",
+ "pyo3-log",
  "serde",
  "tokio",
  "tracing",
@@ -699,9 +701,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.28"
+version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
+checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "matchers"
@@ -887,6 +889,17 @@ checksum = "2dd13844a4242793e02df3e2ec093f540d948299a6a77ea9ce7afd8623f542be"
 dependencies = [
  "libc",
  "pyo3-build-config",
+]
+
+[[package]]
+name = "pyo3-log"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f8bae9ad5ba08b0b0ed2bb9c2bdbaeccc69cafca96d78cf0fbcea0d45d122bb"
+dependencies = [
+ "arc-swap",
+ "log",
+ "pyo3",
 ]
 
 [[package]]

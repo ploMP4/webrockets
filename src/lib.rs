@@ -7,8 +7,8 @@ use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::IntoResponse;
 use axum::{routing::get, Router};
+use pyo3::prelude::*;
 use pyo3::types::PyFunction;
-use pyo3::{exceptions, prelude::*};
 use tokio::runtime::Runtime;
 use tokio::sync::{mpsc, RwLock};
 
@@ -93,10 +93,6 @@ impl WebsocketServer {
 
     fn runserver(&self) {
         self.rt.block_on(async {
-            tracing_subscriber::fmt()
-                .with_max_level(tracing::Level::DEBUG)
-                .init();
-
             let mut app = Router::new();
             for (group, path) in &self.context {
                 let group = group.clone();
@@ -126,7 +122,7 @@ impl WebsocketServer {
                                         .borrow(py)
                                         .dispatch(py, &DispatchMethod::Connect(scope.clone_ref(py)))
                                 }) {
-                                    tracing::error!("Error in websocket connect callback: {}", e);
+                                    log::error!("Error in websocket connect callback: {}", e);
                                     return (
                                         StatusCode::INTERNAL_SERVER_ERROR,
                                         format!("Connection failed"),
@@ -141,7 +137,7 @@ impl WebsocketServer {
                                 if let Err(e) =
                                     WebsocketServer::handle_client(fut, group, state, scope).await
                                 {
-                                    tracing::error!("Error in websocket connection: {}", e);
+                                    log::error!("Error in websocket connection: {}", e);
                                 }
                             });
 
@@ -155,7 +151,7 @@ impl WebsocketServer {
                 .await
                 .unwrap();
 
-            tracing::debug!("listening on {}", listener.local_addr().unwrap());
+            log::info!("listening on {}", listener.local_addr().unwrap());
 
             axum::serve(listener, app.with_state(Arc::clone(&self.state)))
                 .with_graceful_shutdown(async {
@@ -163,7 +159,7 @@ impl WebsocketServer {
                         .await
                         .expect("failed to install Ctrl-C handler");
 
-                    tracing::info!("Exit signal received, shutting down...");
+                    log::info!("Exit signal received, shutting down...");
                 })
                 .await
                 .unwrap();
@@ -346,7 +342,6 @@ impl WebsocketServer {
             _ = &mut receive_task =>  send_task.abort(),
         }
 
-        tracing::info!("Websocket context destroyed");
         state.channels.remove(cid).await;
         Ok(())
     }
@@ -364,6 +359,7 @@ impl WebsocketServer {
         Ok(())
     }
 
+    #[pyo3(signature = (path, group, authentication_classes = None))]
     fn __call__(
         &mut self,
         py: Python<'_>,
@@ -538,25 +534,10 @@ impl SocketView {
     }
 }
 
-#[pyfunction]
-fn log(level: &str, msg: &str) -> PyResult<()> {
-    match level {
-        "debug" => Ok(tracing::debug!(msg)),
-        "info" => Ok(tracing::info!(msg)),
-        "warn" => Ok(tracing::warn!(msg)),
-        "error" => Ok(tracing::error!(msg)),
-        _ => Err(exceptions::PyRuntimeError::new_err(
-            "Invalid level value, allowed: debug, info, warn, error",
-        )),
-    }
-}
-
 #[pymodule]
 mod django_wsrs {
     use pyo3::prelude::*;
 
-    #[pymodule_export]
-    use super::log;
     #[pymodule_export]
     use super::ConnectionScope;
     #[pymodule_export]
@@ -566,6 +547,7 @@ mod django_wsrs {
 
     #[pymodule_init]
     fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {
+        pyo3_log::init();
         m.add("Websocket", WebsocketServer::new())?;
         Ok(())
     }
