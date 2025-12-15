@@ -296,9 +296,16 @@ impl WebsocketServer {
                                 Python::attach(|py| {
                                     handler.borrow(py).dispatch(
                                         py,
-                                        &DispatchMethod::Disconnect(scope.clone_ref(py), None),
-                                    ) // TODO:
-                                });
+                                        &DispatchMethod::Disconnect(
+                                            scope.clone_ref(py),
+                                            Some((
+                                                frame.opcode as u16,
+                                                String::from_utf8_lossy(&frame.payload).to_string(),
+                                            )),
+                                        ),
+                                    )
+                                })
+                                .expect("Disconnect dispatch failed");
                             }
                             break;
                         }
@@ -313,14 +320,17 @@ impl WebsocketServer {
 
                             if let Some(handler) = handler {
                                 Python::attach(|py| {
-                                    handler.borrow(py).dispatch(
-                                        py,
-                                        &DispatchMethod::Receive(
-                                            scope.clone_ref(py),
-                                            cid,
-                                            text.to_string(),
-                                        ),
-                                    );
+                                    handler
+                                        .borrow(py)
+                                        .dispatch(
+                                            py,
+                                            &DispatchMethod::Receive(
+                                                scope.clone_ref(py),
+                                                cid,
+                                                text.to_string(),
+                                            ),
+                                        )
+                                        .expect("Receive dispatch failed");
                                 });
                             }
                         }
