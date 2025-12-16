@@ -1,0 +1,13 @@
+config:
+  target: "http://localhost:6969/chat"
+  phases:
+    - duration: 300
+      arrivalRate: 4
+
+scenarios:
+  - engine: "ws"
+    flow:
+      - loop:
+          - send: '{"type":"echo","payload":"hello"}'
+        count: 100
+      - think: 0.5

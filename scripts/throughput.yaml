@@ -1,0 +1,12 @@
+config:
+  target: "http://localhost:6969/chat"
+  phases:
+    - duration: 600
+      arrivalRate: 100
+      maxVusers: 100
+scenarios:
+  - engine: "ws"
+    flow:
+      - loop:
+          - send: '{"type":"ping","n": "69" }'
+        count: 100000

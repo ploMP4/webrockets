@@ -1,3 +1,4 @@
+use dashmap::DashMap;
 use fastwebsockets::{upgrade, Frame, OpCode, WebSocketError};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -11,6 +12,8 @@ use pyo3::prelude::*;
 use pyo3::types::PyFunction;
 use tokio::runtime::Runtime;
 use tokio::sync::{mpsc, RwLock};
+
+const CHANNEL_BUFFER_SIZE: usize = 10000;
 
 struct AppState {
     channels: ChannelStore,
@@ -70,9 +73,9 @@ impl ConnectionScope {
 #[derive(Debug)]
 #[allow(dead_code)]
 enum Message {
-    Text(Arc<str>, Arc<str>),
-    Binary(Arc<str>, Arc<[u8]>),
-    Close(Arc<str>),
+    Text(Arc<str>),
+    Binary(Arc<[u8]>),
+    Close(),
 }
 
 #[pyclass]
@@ -94,8 +97,7 @@ impl WebsocketServer {
     fn runserver(&self) {
         self.rt.block_on(async {
             let mut app = Router::new();
-            for (group, path) in &self.context {
-                let group = group.clone();
+            for (group, path) in self.context.clone() {
                 app = app.route(
                     &format!("/{path}"),
                     get(
@@ -105,11 +107,20 @@ impl WebsocketServer {
                          State(state): State<Arc<AppState>>| async move {
                             let scope = WebsocketServer::extract_scope(&uri, &headers);
 
-                            let handler = state.registry.read().await.get(&group).cloned();
+                            let handler = state.registry.read().await.get(&path).cloned();
                             if let Some(ref handler) = handler {
-                                if let AuthResult::Failed =
-                                    WebsocketServer::run_authentication(handler, &scope)
-                                {
+                                let handler_clone = Arc::clone(handler);
+                                let scope_clone = Python::attach(|py| scope.clone_ref(py));
+                                let auth_result = tokio::task::spawn_blocking(move || {
+                                    WebsocketServer::run_authentication(
+                                        &handler_clone,
+                                        &scope_clone,
+                                    )
+                                })
+                                .await
+                                .unwrap_or(AuthResult::Failed);
+
+                                if let AuthResult::Failed = auth_result {
                                     return (
                                         StatusCode::UNAUTHORIZED,
                                         format!("Authentication failed"),
@@ -117,11 +128,18 @@ impl WebsocketServer {
                                         .into_response();
                                 }
 
-                                if let Err(e) = Python::attach(|py| -> PyResult<()> {
-                                    handler
-                                        .borrow(py)
-                                        .dispatch(py, &DispatchMethod::Connect(scope.clone_ref(py)))
-                                }) {
+                                let handler_clone = Arc::clone(handler);
+                                let scope_clone = Python::attach(|py| scope.clone_ref(py));
+                                let connect_result = tokio::task::spawn_blocking(move || {
+                                    Python::attach(|py| -> PyResult<()> {
+                                        handler_clone
+                                            .borrow(py)
+                                            .dispatch(py, &DispatchMethod::Connect(scope_clone))
+                                    })
+                                })
+                                .await;
+
+                                if let Ok(Err(e)) = connect_result {
                                     log::error!("Error in websocket connect callback: {}", e);
                                     return (
                                         StatusCode::INTERNAL_SERVER_ERROR,
@@ -135,7 +153,8 @@ impl WebsocketServer {
 
                             tokio::spawn(async move {
                                 if let Err(e) =
-                                    WebsocketServer::handle_client(fut, group, state, scope).await
+                                    WebsocketServer::handle_client(fut, group, path, state, scope)
+                                        .await
                                 {
                                     log::error!("Error in websocket connection: {}", e);
                                 }
@@ -231,46 +250,45 @@ impl WebsocketServer {
     async fn handle_client(
         fut: upgrade::UpgradeFut,
         group: String,
+        path: String,
         state: Arc<AppState>,
         scope: Py<ConnectionScope>,
     ) -> Result<(), WebSocketError> {
-        let group_arc: Arc<str> = group.clone().into();
+        let path_arc: Arc<str> = path.clone().into();
+
         let (reader, mut writer) = fut.await?.split(tokio::io::split);
         let mut reader = fastwebsockets::FragmentCollectorRead::new(reader);
 
-        let (tx, mut rx) = mpsc::channel(100000);
-        let cid = state.channels.insert(tx).await;
-
-        let group_send = Arc::clone(&group_arc);
+        let (tx, mut rx) = mpsc::channel(CHANNEL_BUFFER_SIZE);
+        let cid = state.channels.insert(group, tx);
 
         let mut send_task = tokio::spawn(async move {
             while let Some(msg) = rx.recv().await {
                 match msg.as_ref() {
-                    Message::Text(group, text) if group.as_ref() == group_send.as_ref() => {
+                    Message::Text(text) => {
                         let frame = Frame::text(fastwebsockets::Payload::Borrowed(text.as_bytes()));
                         if writer.write_frame(frame).await.is_err() {
                             break;
                         }
                     }
-                    Message::Binary(group, data) if group.as_ref() == group_send.as_ref() => {
+                    Message::Binary(data) => {
                         let frame = Frame::binary(fastwebsockets::Payload::Borrowed(&data));
                         if writer.write_frame(frame).await.is_err() {
                             break;
                         }
                     }
-                    Message::Close(group) if group.as_ref() == group_send.as_ref() => {
+                    Message::Close() => {
                         // let frame = Frame::close(code, reason);
                         // if tx.write_frame(frame).await.is_err() {
                         //     break;
                         // }
                         break;
                     }
-                    _ => continue,
                 }
             }
         });
 
-        let group_receive = Arc::clone(&group_arc);
+        let path_receive = Arc::clone(&path_arc);
         let state_receive = Arc::clone(&state);
 
         let mut receive_task = tokio::spawn(async move {
@@ -286,22 +304,26 @@ impl WebsocketServer {
                                 .registry
                                 .read()
                                 .await
-                                .get(group_arc.as_ref())
+                                .get(path_receive.as_ref())
                                 .cloned()
                             {
-                                Python::attach(|py| {
-                                    handler.borrow(py).dispatch(
-                                        py,
-                                        &DispatchMethod::Disconnect(
-                                            scope.clone_ref(py),
-                                            Some((
-                                                frame.opcode as u16,
-                                                String::from_utf8_lossy(&frame.payload).to_string(),
-                                            )),
-                                        ),
-                                    )
-                                })
-                                .expect("Disconnect dispatch failed");
+                                let scope_clone = Python::attach(|py| scope.clone_ref(py));
+                                tokio::spawn(async move {
+                                    if let Err(e) = Python::attach(|py| {
+                                        let close_reason =
+                                            String::from_utf8_lossy(&frame.payload).to_string();
+
+                                        handler.borrow(py).dispatch(
+                                            py,
+                                            &DispatchMethod::Disconnect(
+                                                scope_clone,
+                                                Some((frame.opcode as u16, close_reason)),
+                                            ),
+                                        )
+                                    }) {
+                                        log::error!("Error in disconnect callback: {}", e);
+                                    }
+                                });
                             }
                             break;
                         }
@@ -311,22 +333,20 @@ impl WebsocketServer {
                                 .registry
                                 .read()
                                 .await
-                                .get(group_receive.as_ref())
+                                .get(path_receive.as_ref())
                                 .cloned();
 
                             if let Some(handler) = handler {
-                                Python::attach(|py| {
-                                    handler
-                                        .borrow(py)
-                                        .dispatch(
+                                let scope_clone = Python::attach(|py| scope.clone_ref(py));
+                                tokio::spawn(async move {
+                                    if let Err(e) = Python::attach(|py| {
+                                        handler.borrow(py).dispatch(
                                             py,
-                                            &DispatchMethod::Receive(
-                                                scope.clone_ref(py),
-                                                cid,
-                                                text.to_string(),
-                                            ),
+                                            &DispatchMethod::Receive(scope_clone, cid, text),
                                         )
-                                        .expect("Receive dispatch failed");
+                                    }) {
+                                        log::error!("Error in receive callback: {}", e);
+                                    }
                                 });
                             }
                         }
@@ -342,7 +362,7 @@ impl WebsocketServer {
             _ = &mut receive_task =>  send_task.abort(),
         }
 
-        state.channels.remove(cid).await;
+        state.channels.remove(cid);
         Ok(())
     }
 }
@@ -371,8 +391,8 @@ impl WebsocketServer {
         let instance = Py::new(
             py,
             SocketView::new(
-                path,
-                group.clone(),
+                path.clone(),
+                group,
                 authentication_classes.unwrap_or(Vec::new()),
             ),
         )?;
@@ -383,7 +403,7 @@ impl WebsocketServer {
                     .registry
                     .write()
                     .await
-                    .insert(group, Arc::new(instance_ref))
+                    .insert(path, Arc::new(instance_ref))
             })
         });
         Ok(instance)
@@ -395,7 +415,7 @@ impl WebsocketServer {
             tokio::spawn(async move {
                 let _ = state
                     .channels
-                    .send(cid, Arc::new(Message::Text("chat".into(), msg.into())))
+                    .send(cid, Arc::new(Message::Text(msg.into())))
                     .await;
             });
         });
@@ -404,57 +424,68 @@ impl WebsocketServer {
 
     fn broadcast_text(&self, py: Python<'_>, groups: Vec<String>, msg: String) {
         py.detach(|| {
-            let msg: Arc<str> = msg.into();
-            for group in groups {
-                let state = Arc::clone(&self.state);
-                let msg = Arc::clone(&msg);
-                tokio::spawn(async move {
-                    state
-                        .channels
-                        .broadcast(Arc::new(Message::Text(group.into(), msg)))
-                        .await
-                });
-            }
+            self.state
+                .channels
+                .broadcast(&groups, Arc::new(Message::Text(msg.into())));
         });
     }
 }
 
 struct ChannelStore {
     next_id: AtomicU64,
-    data: RwLock<HashMap<u64, mpsc::Sender<Arc<Message>>>>,
+    data: DashMap<u64, Arc<mpsc::Sender<Arc<Message>>>>,
+    grouped: DashMap<String, Vec<Arc<mpsc::Sender<Arc<Message>>>>>,
 }
 
 impl ChannelStore {
     fn new() -> Self {
         Self {
             next_id: AtomicU64::new(1),
-            data: RwLock::new(HashMap::new()),
+            data: DashMap::new(),
+            grouped: DashMap::new(),
         }
     }
 
-    async fn insert(&self, value: mpsc::Sender<Arc<Message>>) -> u64 {
+    fn insert(&self, group: String, value: mpsc::Sender<Arc<Message>>) -> u64 {
+        let ch_arc: Arc<mpsc::Sender<Arc<Message>>> = value.into();
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        self.data.write().await.insert(id, value);
+
+        self.data.insert(id, Arc::clone(&ch_arc));
+        self.grouped
+            .entry(group)
+            .or_insert_with(Vec::new)
+            .push(Arc::clone(&ch_arc));
+
         id
     }
 
-    async fn remove(&self, id: u64) {
-        self.data.write().await.remove(&id);
+    fn remove(&self, id: u64) {
+        self.data.remove(&id);
     }
 
     async fn send(&self, id: u64, msg: Arc<Message>) -> anyhow::Result<()> {
-        if let Some(tx) = self.data.read().await.get(&id) {
+        if let Some(tx) = self.data.get(&id) {
             tx.send(msg).await?;
         };
         Ok(())
     }
 
-    async fn broadcast(&self, msg: Arc<Message>) -> anyhow::Result<()> {
-        let map = self.data.read().await;
-        for tx in map.values() {
-            let _ = tx.send(Arc::clone(&msg)).await?;
+    fn broadcast(&self, groups: &[String], msg: Arc<Message>) {
+        let mut senders = Vec::new();
+
+        for group in groups {
+            if let Some(entry) = self.grouped.get(group) {
+                senders.extend(entry.iter().cloned());
+            }
         }
-        Ok(())
+
+        tokio::spawn(async move {
+            for tx in senders {
+                if let Err(e) = tx.send(Arc::clone(&msg)).await {
+                    log::warn!("Failed to send message to channel: {}", e);
+                }
+            }
+        });
     }
 }
 
