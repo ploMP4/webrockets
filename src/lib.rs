@@ -94,7 +94,7 @@ impl WebsocketServer {
         }
     }
 
-    fn runserver(&self) {
+    fn runserver(&self, host: &str, port: &str) {
         self.rt.block_on(async {
             let mut app = Router::new();
             for (group, path) in self.context.clone() {
@@ -166,7 +166,7 @@ impl WebsocketServer {
                 );
             }
 
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:6969")
+            let listener = tokio::net::TcpListener::bind(format!("{}:{}", host, port))
                 .await
                 .unwrap();
 
@@ -375,7 +375,22 @@ enum AuthResult {
 #[pymethods]
 impl WebsocketServer {
     fn start(&self, py: Python<'_>) -> PyResult<()> {
-        py.detach(|| self.runserver());
+        let settings = py.import("django.conf")?.getattr("settings")?;
+
+        let host: String = settings
+            .getattr("WEBSOCKET_HOST")
+            .and_then(|v| v.extract())
+            .unwrap_or("0.0.0.0".to_string());
+
+        let port: String = settings
+            .getattr("WEBSOCKET_PORT")
+            .and_then(|v| {
+                v.extract::<String>()
+                    .or_else(|_| v.extract::<u16>().map(|n| n.to_string()))
+            })
+            .unwrap_or("46290".to_string());
+
+        py.detach(|| self.runserver(&host, &port));
         Ok(())
     }
 
