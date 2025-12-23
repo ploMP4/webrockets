@@ -11,7 +11,7 @@ use axum::{routing::get, Router};
 use pyo3::prelude::*;
 use pyo3::types::PyFunction;
 use tokio::runtime::Runtime;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{mpsc, watch, RwLock};
 
 const CHANNEL_BUFFER_SIZE: usize = 10000;
 
@@ -83,18 +83,24 @@ struct WebsocketServer {
     rt: Runtime,
     state: Arc<AppState>,
     context: Vec<(String, String)>,
+    shutdown_tx: watch::Sender<bool>,
+    shutdown_rx: watch::Receiver<bool>,
 }
 
 impl WebsocketServer {
     fn new() -> Self {
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
         Self {
             rt: Runtime::new().expect("Unable to create tokio runtime"),
             state: Arc::new(AppState::new()),
             context: Vec::new(),
+            shutdown_tx,
+            shutdown_rx,
         }
     }
 
     fn runserver(&self, host: &str, port: &str) {
+        let mut shutdown_rx = self.shutdown_rx.clone();
         self.rt.block_on(async {
             let mut app = Router::new();
             for (group, path) in self.context.clone() {
@@ -173,12 +179,15 @@ impl WebsocketServer {
             log::info!("listening on {}", listener.local_addr().unwrap());
 
             axum::serve(listener, app.with_state(Arc::clone(&self.state)))
-                .with_graceful_shutdown(async {
-                    tokio::signal::ctrl_c()
-                        .await
-                        .expect("failed to install Ctrl-C handler");
-
-                    log::info!("Exit signal received, shutting down...");
+                .with_graceful_shutdown(async move {
+                    tokio::select! {
+                        _ = tokio::signal::ctrl_c() => {
+                            log::info!("Ctrl+C received, shutting down...");
+                        }
+                        _ = shutdown_rx.changed() => {
+                            log::info!("Stop signal received, shutting down...");
+                        }
+                    }
                 })
                 .await
                 .unwrap();
@@ -392,6 +401,10 @@ impl WebsocketServer {
 
         py.detach(|| self.runserver(&host, &port));
         Ok(())
+    }
+
+    fn stop(&self) {
+        let _ = self.shutdown_tx.send(true);
     }
 
     #[pyo3(signature = (path, group, authentication_classes = None))]
