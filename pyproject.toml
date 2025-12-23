@@ -34,4 +34,6 @@ python_functions = ["test_*"]
 dev = [
     "pytest>=9.0.2",
     "pytest-django>=4.11.1",
+    "pytest-asyncio>=0.24.0",
+    "websockets>=13.0",
 ]
