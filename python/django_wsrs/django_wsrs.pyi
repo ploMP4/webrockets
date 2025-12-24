@@ -4,9 +4,9 @@ from django_wsrs.auth import BaseAuthentication
 
 class ConnectionScope:
     path: str
+    query_string: str
     headers: dict[str, str]
     cookies: dict[str, str]
-    query_string: str
     user: Any | None
 
     def __init__(
@@ -30,8 +30,8 @@ class SocketView:
         self, func: Callable[[ConnectionScope, int, str], None]
     ) -> Callable[[ConnectionScope, int, str], None]: ...
     def disconnect(
-        self, func: Callable[[ConnectionScope], tuple[int, str] | None]
-    ) -> Callable[[ConnectionScope, tuple[int, str] | None], None]: ...
+        self, func: Callable[[ConnectionScope, int | None, str | None], None]
+    ) -> Callable[[ConnectionScope, int | None, str | None], None]: ...
 
 class WebsocketServer:
     def __call__(
