@@ -44,6 +44,23 @@ def setup_routes():
     def chat_disconnect(scope, code=None, reason=None):
         test_state["disconnected"].append(("chat", code, reason))
 
+    async_view = Websocket("ws/async/", "async")
+
+    @async_view.connect
+    async def async_connect(scope):
+        await asyncio.sleep(0.1)
+        test_state["connected"].append(("async", scope.path))
+
+    @async_view.receive
+    async def async_receive(scope, cid, data):
+        await asyncio.sleep(0.1)
+        await Websocket.asend(cid, data)
+
+    @async_view.disconnect
+    async def async_disconnect(scope, code=None, reason=None):
+        await asyncio.sleep(0.1)
+        test_state["disconnected"].append(("async", code, reason))
+
 
 @pytest.fixture(scope="module")
 def ws_server():
@@ -231,3 +248,19 @@ class TestMessageTypes:
             await ws.send(large_msg)
             response = await asyncio.wait_for(ws.recv(), timeout=5.0)
             assert response == f"echo: {large_msg}"
+
+
+class TestAsyncCallbacks:
+    @pytest.mark.asyncio
+    async def test_async_callback_triggered(self, ws_server):
+        async with websockets.connect(f"{ws_server}/ws/async/") as ws:
+            await ws.send("test")
+            msg = await ws.recv()
+            assert msg == "test"
+
+        await asyncio.sleep(0.5)
+
+        assert len(test_state["connected"]) >= 1
+        assert any(c[0] == "async" for c in test_state["connected"])
+        assert len(test_state["disconnected"]) >= 1
+        assert any(d[0] == "async" for d in test_state["disconnected"])
