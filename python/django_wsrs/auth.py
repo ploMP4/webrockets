@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from types import SimpleNamespace
 from typing import Any
+from urllib.parse import parse_qs
+
 from django.contrib import auth
 from django.conf import settings
 from django.utils.module_loading import import_string
@@ -214,8 +216,6 @@ class QueryStringTokenAuthentication(BaseAuthentication):
     query_param: str = "token"
 
     def authenticate(self, scope) -> Any | None:
-        from urllib.parse import parse_qs
-
         params = parse_qs(scope.query_string)
         tokens = params.get(self.query_param, [])
 
