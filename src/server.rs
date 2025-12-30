@@ -4,7 +4,6 @@ use axum::response::IntoResponse;
 use axum::{routing::get, Router};
 use fastwebsockets::{upgrade, Frame, OpCode, WebSocketError};
 use pyo3::prelude::*;
-use pyo3::types::PyInt;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
@@ -12,9 +11,9 @@ use tokio::sync::{mpsc, watch, RwLock};
 
 use crate::callback::Callback;
 use crate::channel_store::ChannelStore;
-use crate::connection_scope::ConnectionScope;
+use crate::connection::Connection;
 use crate::socket_view::SocketView;
-use crate::{start_python_event_loop, Message, ASYNCIO_SLEEP};
+use crate::{start_python_event_loop, Message};
 
 const CHANNEL_BUFFER_SIZE: usize = 10000;
 
@@ -32,11 +31,11 @@ impl AppState {
     }
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 pub struct WebsocketServer {
     rt: Runtime,
     state: Arc<AppState>,
-    context: Vec<(String, String)>,
+    context: RwLock<Vec<(String, String)>>,
     shutdown_tx: watch::Sender<bool>,
     shutdown_rx: watch::Receiver<bool>,
 }
@@ -47,7 +46,7 @@ impl WebsocketServer {
         Self {
             rt: Runtime::new().expect("Unable to create tokio runtime"),
             state: Arc::new(AppState::new()),
-            context: Vec::new(),
+            context: RwLock::new(Vec::new()),
             shutdown_tx,
             shutdown_rx,
         }
@@ -58,7 +57,7 @@ impl WebsocketServer {
 
         self.rt.block_on(async {
             let mut app = Router::new();
-            for (group, path) in self.context.clone() {
+            for (group, path) in self.context.read().await.clone() {
                 app = app.route(
                     &format!("/{path}"),
                     get(
@@ -168,7 +167,7 @@ impl WebsocketServer {
         });
     }
 
-    fn extract_scope(uri: &Uri, header_map: &HeaderMap) -> Py<ConnectionScope> {
+    fn extract_scope(uri: &Uri, header_map: &HeaderMap) -> Py<Connection> {
         let path = uri.path().to_owned();
         let query_string = uri.query().unwrap_or_default().to_owned();
 
@@ -192,25 +191,16 @@ impl WebsocketServer {
             }
         }
 
-        Python::attach(|py| -> Py<ConnectionScope> {
-            Py::new(
-                py,
-                ConnectionScope {
-                    path,
-                    headers,
-                    cookies,
-                    query_string,
-                    user: None,
-                },
-            )
-            .expect("Unable to create connection scope")
+        Python::attach(|py| -> Py<Connection> {
+            Py::new(py, Connection::new(path, query_string, headers, cookies))
+                .expect("Unable to create connection scope")
         })
     }
 
     fn authenticated(
         py: Python<'_>,
         auth_classes: &Vec<Py<PyAny>>,
-        scope: &Py<ConnectionScope>,
+        scope: &Py<Connection>,
     ) -> bool {
         if auth_classes.is_empty() {
             return true;
@@ -264,8 +254,7 @@ impl WebsocketServer {
 
     async fn receive_listener<S>(
         mut reader: fastwebsockets::FragmentCollectorRead<S>,
-        scope: Py<ConnectionScope>,
-        channel_id: Py<PyInt>,
+        scope: Py<Connection>,
         receive_callback: Option<Callback>,
         disconnect_callback: Option<Callback>,
     ) where
@@ -302,10 +291,10 @@ impl WebsocketServer {
                             let payload_str = std::str::from_utf8(payload_bytes);
 
                             if let Err(e) = Python::attach(|py| match payload_str {
-                                Ok(s) => cb.invoke(py, (&scope, &channel_id, s)),
+                                Ok(s) => cb.invoke(py, (&scope, s)),
                                 Err(_) => {
                                     let s = String::from_utf8_lossy(payload_bytes);
-                                    cb.invoke(py, (&scope, &channel_id, s))
+                                    cb.invoke(py, (&scope, s))
                                 }
                             }) {
                                 log::error!("Error in receive callback: {}", e);
@@ -323,16 +312,20 @@ impl WebsocketServer {
         fut: upgrade::UpgradeFut,
         group: String,
         state: Arc<AppState>,
-        scope: Py<ConnectionScope>,
+        scope: Py<Connection>,
         handler: Arc<Py<SocketView>>,
     ) -> Result<(), WebSocketError> {
         let (reader, writer) = fut.await?.split(tokio::io::split);
         let reader = fastwebsockets::FragmentCollectorRead::new(reader);
 
         let (tx, rx) = mpsc::channel(CHANNEL_BUFFER_SIZE);
-        let channel_id = state.channels.register(&group, tx);
+        let tx_arc: Arc<mpsc::Sender<Arc<Message>>> = Arc::new(tx);
+        let channel_id = state.channels.register(&group, tx_arc.clone());
 
-        let (receive_cb, disconnect_cb, channel_id_py) = Python::attach(|py| {
+        let (receive_cb, disconnect_cb) = Python::attach(|py| {
+            let mut conn = scope.borrow_mut(py);
+            conn.sender = Some(tx_arc);
+
             let view = handler.borrow(py);
             (
                 view.receive_callback
@@ -341,7 +334,6 @@ impl WebsocketServer {
                 view.disconnect_callback
                     .as_ref()
                     .map(|cb| Callback::new(cb.func.clone_ref(py), cb.is_async)),
-                channel_id.into_pyobject(py).unwrap().unbind(),
             )
         });
 
@@ -350,7 +342,6 @@ impl WebsocketServer {
         let mut receive_task = tokio::spawn(WebsocketServer::receive_listener(
             reader,
             scope,
-            channel_id_py,
             receive_cb,
             disconnect_cb,
         ));
@@ -394,13 +385,16 @@ impl WebsocketServer {
 
     #[pyo3(signature = (path, group, authentication_classes = None))]
     fn __call__(
-        &mut self,
+        &self,
         py: Python<'_>,
         path: String,
         group: String,
         authentication_classes: Option<Vec<Py<PyAny>>>,
     ) -> PyResult<Py<SocketView>> {
-        self.context.push((group.clone(), path.clone()));
+        self.context
+            .blocking_write()
+            .push((group.clone(), path.clone()));
+
         let instance = Py::new(
             py,
             SocketView::new(
@@ -420,39 +414,6 @@ impl WebsocketServer {
             })
         });
         Ok(instance)
-    }
-
-    fn asend<'py>(&self, py: Python<'py>, cid: u64, msg: String) -> PyResult<Bound<'py, PyAny>> {
-        let message = Arc::new(Message::Text(msg.into()));
-
-        if let Some(()) = self.state.channels.try_send(cid, &message) {
-            let sleep = ASYNCIO_SLEEP.get().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("asyncio.sleep not initialized")
-            })?;
-            return Ok(sleep.call1(py, (0,))?.into_bound(py));
-        }
-
-        let state = Arc::clone(&self.state);
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let _ = state.channels.send(cid, message).await;
-            Ok(())
-        })
-    }
-
-    fn send(&self, py: Python<'_>, cid: u64, msg: String) -> PyResult<()> {
-        let message = Arc::new(Message::Text(msg.into()));
-
-        if let Some(()) = self.state.channels.try_send(cid, &message) {
-            return Ok(());
-        }
-
-        py.detach(|| {
-            let state = Arc::clone(&self.state);
-            tokio::spawn(async move {
-                let _ = state.channels.send(cid, message).await;
-            });
-        });
-        Ok(())
     }
 
     fn broadcast_text(&self, py: Python<'_>, groups: Vec<String>, msg: String) {

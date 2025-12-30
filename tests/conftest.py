@@ -95,8 +95,8 @@ def create_session(session_store, active_user):
 
 @pytest.fixture
 def websocket_scope():
-    """Factory fixture to create ConnectionScope objects."""
-    from django_wsrs import ConnectionScope
+    """Factory fixture to create Connection objects."""
+    from django_wsrs import Connection
 
     def _create_scope(
         path="/ws/test/",
@@ -104,7 +104,7 @@ def websocket_scope():
         cookies=None,
         query_string="",
     ):
-        return ConnectionScope(
+        return Connection(
             path=path,
             headers=headers or {},
             cookies=cookies or {},

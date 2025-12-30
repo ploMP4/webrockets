@@ -4,7 +4,7 @@ use std::sync::{Arc, OnceLock};
 
 mod callback;
 mod channel_store;
-mod connection_scope;
+mod connection;
 mod server;
 mod socket_view;
 
@@ -56,7 +56,7 @@ mod django_wsrs {
     use pyo3::prelude::*;
 
     #[pymodule_export]
-    use super::connection_scope::ConnectionScope;
+    use super::connection::Connection;
     #[pymodule_export]
     use super::server::WebsocketServer;
     #[pymodule_export]

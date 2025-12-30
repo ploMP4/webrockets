@@ -17,47 +17,47 @@ def setup_routes():
     echo_view = Websocket("ws/echo/", "echo")
 
     @echo_view.connect
-    def echo_connect(scope):
-        test_state["connected"].append(("echo", scope.path))
+    def echo_connect(conn):
+        test_state["connected"].append(("echo", conn.path))
 
     @echo_view.receive
-    def echo_receive(scope, cid, data):
-        Websocket.send(cid, f"echo: {data}")
-        test_state["messages"].append(("echo", cid, data))
+    def echo_receive(conn, data):
+        conn.send(f"echo: {data}")
+        test_state["messages"].append(("echo", data))
 
     @echo_view.disconnect
-    def echo_disconnect(scope, code=None, reason=None):
+    def echo_disconnect(conn, code=None, reason=None):
         test_state["disconnected"].append(("echo", code, reason))
 
     chat_view = Websocket("ws/chat/", "chat")
 
     @chat_view.connect
-    def chat_connect(scope):
-        test_state["connected"].append(("chat", scope.path))
+    def chat_connect(conn):
+        test_state["connected"].append(("chat", conn.path))
 
     @chat_view.receive
-    def chat_receive(scope, cid, data):
+    def chat_receive(conn, data):
         Websocket.broadcast_text(["chat"], data)
-        test_state["messages"].append(("chat", cid, data))
+        test_state["messages"].append(("chat", data))
 
     @chat_view.disconnect
-    def chat_disconnect(scope, code=None, reason=None):
+    def chat_disconnect(conn, code=None, reason=None):
         test_state["disconnected"].append(("chat", code, reason))
 
     async_view = Websocket("ws/async/", "async")
 
     @async_view.connect
-    async def async_connect(scope):
+    async def async_connect(conn):
         await asyncio.sleep(0.1)
-        test_state["connected"].append(("async", scope.path))
+        test_state["connected"].append(("async", conn.path))
 
     @async_view.receive
-    async def async_receive(scope, cid, data):
+    async def async_receive(conn, data):
         await asyncio.sleep(0.1)
-        await Websocket.asend(cid, data)
+        await conn.asend(data)
 
     @async_view.disconnect
-    async def async_disconnect(scope, code=None, reason=None):
+    async def async_disconnect(conn, code=None, reason=None):
         await asyncio.sleep(0.1)
         test_state["disconnected"].append(("async", code, reason))
 

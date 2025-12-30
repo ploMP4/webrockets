@@ -20,44 +20,20 @@ impl ChannelStore {
         }
     }
 
-    pub fn register(&self, group: &str, value: mpsc::Sender<Arc<Message>>) -> u64 {
+    pub fn register(&self, group: &str, tx: Arc<mpsc::Sender<Arc<Message>>>) -> u64 {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let ch_arc: Arc<mpsc::Sender<Arc<Message>>> = value.into();
 
-        self.data.insert(id, Arc::clone(&ch_arc));
+        self.data.insert(id, Arc::clone(&tx));
         self.grouped
             .entry(group.to_string())
             .or_insert_with(Vec::new)
-            .push(ch_arc);
+            .push(tx);
 
         id
     }
 
     pub fn remove(&self, id: u64) {
         self.data.remove(&id);
-    }
-
-    pub fn try_send(&self, id: u64, msg: &Arc<Message>) -> Option<()> {
-        if let Some(tx) = self.data.get(&id) {
-            match tx.try_send(Arc::clone(msg)) {
-                Ok(()) => Some(()),
-                Err(mpsc::error::TrySendError::Full(_)) => None,
-                Err(mpsc::error::TrySendError::Closed(_)) => Some(()),
-            }
-        } else {
-            Some(())
-        }
-    }
-
-    pub async fn send(
-        &self,
-        id: u64,
-        msg: Arc<Message>,
-    ) -> Result<(), mpsc::error::SendError<Arc<Message>>> {
-        if let Some(tx) = self.data.get(&id) {
-            tx.send(msg).await?;
-        };
-        Ok(())
     }
 
     pub fn broadcast(&self, groups: &[String], msg: Arc<Message>) {

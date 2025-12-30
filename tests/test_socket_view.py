@@ -1,4 +1,4 @@
-from django_wsrs import ConnectionScope
+from django_wsrs import Connection
 from django_wsrs.auth import BaseAuthentication
 from django_wsrs.django_wsrs import Websocket
 
@@ -12,7 +12,7 @@ class TestSocketViewCreation:
 
     def test_create_view_with_auth_classes(self):
         class MockAuth(BaseAuthentication):
-            def authenticate(self, scope):
+            def authenticate(self, conn):
                 return None
 
         view = Websocket(
@@ -40,8 +40,8 @@ class TestConnectDecorator:
         callback_called = []
 
         @view.connect
-        def on_connect(scope):
-            callback_called.append(scope)
+        def on_connect(conn):
+            callback_called.append(conn)
 
         assert callable(on_connect)
 
@@ -49,11 +49,11 @@ class TestConnectDecorator:
         view = Websocket("ws/connect_preserve/", "connect_preserve")
 
         @view.connect
-        def my_connect_handler(scope):
+        def my_connect_handler(conn):
             return "connected"
 
-        scope = ConnectionScope("/ws/", "", {}, {})
-        result = my_connect_handler(scope)
+        conn = Connection("/ws/", "", {}, {})
+        result = my_connect_handler(conn)
         assert result == "connected"
 
 
@@ -62,7 +62,7 @@ class TestReceiveDecorator:
         view = Websocket("ws/receive_test/", "receive_group")
 
         @view.receive
-        def on_receive(scope, cid, data):
+        def on_receive(conn, data):
             pass
 
         assert callable(on_receive)
@@ -71,11 +71,11 @@ class TestReceiveDecorator:
         view = Websocket("ws/receive_preserve/", "receive_preserve")
 
         @view.receive
-        def my_receive_handler(scope, cid, data):
+        def my_receive_handler(conn, data):
             return f"Received: {data}"
 
-        scope = ConnectionScope("/ws/", "", {}, {})
-        result = my_receive_handler(scope, 123, "hello")
+        conn = Connection("/ws/", "", {}, {})
+        result = my_receive_handler(conn, "hello")
         assert result == "Received: hello"
 
 
@@ -84,7 +84,7 @@ class TestDisconnectDecorator:
         view = Websocket("ws/disconnect_test/", "disconnect_group")
 
         @view.disconnect
-        def on_disconnect(scope, code=None, reason=None):
+        def on_disconnect(conn, code=None, reason=None):
             pass
 
         assert callable(on_disconnect)
@@ -93,11 +93,11 @@ class TestDisconnectDecorator:
         view = Websocket("ws/disconnect_preserve/", "disconnect_preserve")
 
         @view.disconnect
-        def my_disconnect_handler(scope, code=None, reason=None):
+        def my_disconnect_handler(conn, code=None, reason=None):
             return f"Disconnected: {code}"
 
-        scope = ConnectionScope("/ws/", "", {}, {})
-        result = my_disconnect_handler(scope, 1000, "normal")
+        conn = Connection("/ws/", "", {}, {})
+        result = my_disconnect_handler(conn, 1000, "normal")
         assert result == "Disconnected: 1000"
 
 
@@ -107,22 +107,22 @@ class TestFullViewSetup:
         events = []
 
         @view.connect
-        def on_connect(scope):
-            events.append(("connect", scope.path))
+        def on_connect(conn):
+            events.append(("connect", conn.path))
 
         @view.receive
-        def on_receive(scope, cid, data):
+        def on_receive(conn, data):
             events.append(("receive", data))
 
         @view.disconnect
-        def on_disconnect(scope, code=None, reason=None):
+        def on_disconnect(conn, code=None, reason=None):
             events.append(("disconnect", code))
 
         # Verify all callbacks are registered and callable
-        scope = ConnectionScope("/ws/full/", "", {}, {})
-        on_connect(scope)
-        on_receive(scope, 1, "test message")
-        on_disconnect(scope, 1000)
+        conn = Connection("/ws/full/", "", {}, {})
+        on_connect(conn)
+        on_receive(conn, "test message")
+        on_disconnect(conn, 1000)
 
         assert events == [
             ("connect", "/ws/full/"),
@@ -130,26 +130,26 @@ class TestFullViewSetup:
             ("disconnect", 1000),
         ]
 
-    def test_view_callbacks_access_scope_data(self):
-        view = Websocket("ws/scope_access/", "scope_access")
+    def test_view_callbacks_access_conn_data(self):
+        view = Websocket("ws/conn_access/", "conn_access")
         captured_data = {}
 
         @view.connect
-        def on_connect(scope):
-            captured_data["path"] = scope.path
-            captured_data["query"] = scope.query_string
-            captured_data["cookie"] = scope.get_cookie("session")
-            captured_data["header"] = scope.get_header("authorization")
+        def on_connect(conn):
+            captured_data["path"] = conn.path
+            captured_data["query"] = conn.query_string
+            captured_data["cookie"] = conn.get_cookie("session")
+            captured_data["header"] = conn.get_header("authorization")
 
-        scope = ConnectionScope(
-            path="/ws/scope_access/",
+        conn = Connection(
+            path="/ws/conn_access/",
             query_string="room=general",
             headers={"authorization": "Bearer token123"},
             cookies={"session": "abc123"},
         )
-        on_connect(scope)
+        on_connect(conn)
 
-        assert captured_data["path"] == "/ws/scope_access/"
+        assert captured_data["path"] == "/ws/conn_access/"
         assert captured_data["query"] == "room=general"
         assert captured_data["cookie"] == "abc123"
         assert captured_data["header"] == "Bearer token123"
