@@ -56,7 +56,11 @@ mod django_wsrs {
     use pyo3::prelude::*;
 
     #[pymodule_export]
+    use super::connection::BaseConnection;
+    #[pymodule_export]
     use super::connection::Connection;
+    #[pymodule_export]
+    use super::connection::IncomingConnection;
     #[pymodule_export]
     use super::server::WebsocketServer;
     #[pymodule_export]

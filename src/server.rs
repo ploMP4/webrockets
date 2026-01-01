@@ -11,7 +11,7 @@ use tokio::sync::{mpsc, watch, RwLock};
 
 use crate::callback::Callback;
 use crate::channel_store::ChannelStore;
-use crate::connection::Connection;
+use crate::connection::{BaseConnection, Connection, IncomingConnection};
 use crate::socket_view::SocketView;
 use crate::{start_python_event_loop, Message};
 
@@ -72,40 +72,53 @@ impl WebsocketServer {
                                 let handler_clone = Arc::clone(handler);
                                 let scope_clone = Python::attach(|py| scope.clone_ref(py));
                                 let combined_result = tokio::task::spawn_blocking(move || {
-                                    Python::attach(|py| -> Result<(), (StatusCode, &'static str)> {
-                                        let view = handler_clone.borrow(py);
-                                        let auth_classes = &view.authentication_classes;
+                                    Python::attach(
+                                        |py| -> Result<Py<Connection>, (StatusCode, &'static str)> {
+                                            let view = handler_clone.borrow(py);
+                                            let auth_classes = &view.authentication_classes;
 
-                                        if !WebsocketServer::authenticated(
-                                            py,
-                                            auth_classes,
-                                            &scope_clone,
-                                        ) {
-                                            return Err((
-                                                StatusCode::UNAUTHORIZED,
-                                                "Authentication failed",
-                                            ));
-                                        }
-
-                                        if let Some(cb) = &view.connect_callback {
-                                            if let Err(e) = cb.invoke(py, (&scope_clone,)) {
-                                                log::error!(
-                                                    "Error in websocket connect callback: {}",
-                                                    e
-                                                );
+                                            if !WebsocketServer::authenticated(
+                                                py,
+                                                auth_classes,
+                                                &scope_clone,
+                                            ) {
                                                 return Err((
-                                                    StatusCode::INTERNAL_SERVER_ERROR,
-                                                    "Connection failed",
+                                                    StatusCode::UNAUTHORIZED,
+                                                    "Authentication failed",
                                                 ));
                                             }
-                                        }
 
-                                        Ok(())
-                                    })
+                                            if let Some(cb) = &view.connect_callback {
+                                                if let Err(e) = cb.invoke(py, (&scope_clone,)) {
+                                                    log::error!(
+                                                        "Error in websocket connect callback: {}",
+                                                        e
+                                                    );
+                                                    return Err((
+                                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                                        "Connection failed",
+                                                    ));
+                                                }
+                                            }
+
+                                            IncomingConnection::upgrade(&scope_clone, py).map_err(
+                                                |e| {
+                                                    log::error!(
+                                                        "Error upgrading connection: {}",
+                                                        e
+                                                    );
+                                                    (
+                                                        StatusCode::INTERNAL_SERVER_ERROR,
+                                                        "Connection upgrade failed",
+                                                    )
+                                                },
+                                            )
+                                        },
+                                    )
                                 })
                                 .await;
 
-                                match combined_result {
+                                let conn = match combined_result {
                                     Ok(Err((status, msg))) => {
                                         return (status, msg).into_response();
                                     }
@@ -116,8 +129,8 @@ impl WebsocketServer {
                                         )
                                             .into_response();
                                     }
-                                    Ok(Ok(())) => {}
-                                }
+                                    Ok(Ok(conn)) => conn,
+                                };
 
                                 let (response, fut) = ws.upgrade().unwrap();
                                 let handler_clone = Arc::clone(handler);
@@ -127,7 +140,7 @@ impl WebsocketServer {
                                         fut,
                                         group,
                                         state,
-                                        scope,
+                                        conn,
                                         handler_clone,
                                     )
                                     .await
@@ -167,7 +180,7 @@ impl WebsocketServer {
         });
     }
 
-    fn extract_scope(uri: &Uri, header_map: &HeaderMap) -> Py<Connection> {
+    fn extract_scope(uri: &Uri, header_map: &HeaderMap) -> Py<IncomingConnection> {
         let path = uri.path().to_owned();
         let query_string = uri.query().unwrap_or_default().to_owned();
 
@@ -191,16 +204,22 @@ impl WebsocketServer {
             }
         }
 
-        Python::attach(|py| -> Py<Connection> {
-            Py::new(py, Connection::new(path, query_string, headers, cookies))
-                .expect("Unable to create connection scope")
+        Python::attach(|py| -> Py<IncomingConnection> {
+            Py::new(
+                py,
+                (
+                    IncomingConnection,
+                    BaseConnection::new(path, query_string, headers, cookies),
+                ),
+            )
+            .expect("Unable to create connection")
         })
     }
 
     fn authenticated(
         py: Python<'_>,
         auth_classes: &Vec<Py<PyAny>>,
-        scope: &Py<Connection>,
+        scope: &Py<IncomingConnection>,
     ) -> bool {
         if auth_classes.is_empty() {
             return true;
@@ -208,12 +227,8 @@ impl WebsocketServer {
 
         for authenticator in auth_classes {
             if let Ok(auth) = authenticator.getattr(py, "authenticate") {
-                if let Some(res) = auth
-                    .call1(py, (&scope,))
-                    .ok()
-                    .filter(|res| !res.is_none(py))
-                {
-                    scope.borrow_mut(py).user = Some(res);
+                if let Some(res) = auth.call1(py, (scope,)).ok().filter(|res| !res.is_none(py)) {
+                    scope.borrow_mut(py).as_super().user = Some(res);
                     return true;
                 }
             }

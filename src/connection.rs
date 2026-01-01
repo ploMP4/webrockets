@@ -6,8 +6,8 @@ use tokio::sync::mpsc;
 
 use crate::{Message, ASYNCIO_SLEEP};
 
-#[pyclass]
-pub struct Connection {
+#[pyclass(subclass)]
+pub struct BaseConnection {
     #[pyo3(get)]
     pub path: String,
     #[pyo3(get)]
@@ -18,30 +18,27 @@ pub struct Connection {
     pub cookies: HashMap<String, String>,
     #[pyo3(get)]
     pub user: Option<Py<PyAny>>,
-
-    pub(crate) sender: Option<Arc<mpsc::Sender<Arc<Message>>>>,
 }
 
-impl Connection {
+impl BaseConnection {
     pub fn new(
         path: String,
         query_string: String,
         headers: HashMap<String, String>,
         cookies: HashMap<String, String>,
     ) -> Self {
-        Connection {
+        Self {
             path,
             query_string,
             headers,
             cookies,
             user: None,
-            sender: None,
         }
     }
 }
 
 #[pymethods]
-impl Connection {
+impl BaseConnection {
     #[new]
     fn __new__(
         path: String,
@@ -58,6 +55,57 @@ impl Connection {
 
     fn get_header(&self, name: String) -> Option<&String> {
         self.headers.get(&name)
+    }
+}
+
+#[pyclass(extends=BaseConnection)]
+pub struct IncomingConnection;
+
+impl IncomingConnection {
+    pub fn upgrade(incoming: &Py<IncomingConnection>, py: Python<'_>) -> PyResult<Py<Connection>> {
+        let borrowed = incoming.borrow(py);
+        let base = borrowed.as_super();
+
+        Py::new(
+            py,
+            (
+                Connection::new(),
+                BaseConnection {
+                    path: base.path.clone(),
+                    query_string: base.query_string.clone(),
+                    headers: base.headers.clone(),
+                    cookies: base.cookies.clone(),
+                    user: base.user.as_ref().map(|u| u.clone_ref(py)),
+                },
+            ),
+        )
+    }
+}
+
+#[pyclass(extends=BaseConnection)]
+pub(crate) struct Connection {
+    pub(crate) sender: Option<Arc<mpsc::Sender<Arc<Message>>>>,
+}
+
+impl Connection {
+    pub fn new() -> Self {
+        Self { sender: None }
+    }
+}
+
+#[pymethods]
+impl Connection {
+    #[new]
+    fn __new__(
+        path: String,
+        query_string: String,
+        headers: HashMap<String, String>,
+        cookies: HashMap<String, String>,
+    ) -> (Self, BaseConnection) {
+        (
+            Self::new(),
+            BaseConnection::new(path, query_string, headers, cookies),
+        )
     }
 
     fn send(&self, py: Python<'_>, msg: String) -> PyResult<()> {

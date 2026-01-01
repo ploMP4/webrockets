@@ -1,6 +1,7 @@
 import asyncio
 import os
 import threading
+from django_wsrs.django_wsrs import Connection, IncomingConnection
 import pytest
 import websockets
 
@@ -17,7 +18,7 @@ def setup_routes():
     echo_view = Websocket("ws/echo/", "echo")
 
     @echo_view.connect
-    def echo_connect(conn):
+    def echo_connect(conn: IncomingConnection):
         test_state["connected"].append(("echo", conn.path))
 
     @echo_view.receive
