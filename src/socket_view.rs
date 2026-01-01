@@ -3,19 +3,19 @@ use pyo3::{prelude::*, types::PyFunction};
 use crate::callback::Callback;
 
 #[pyclass]
-pub struct SocketView {
+pub(crate) struct SocketView {
     #[pyo3(get)]
     path: String,
     #[pyo3(get)]
     group: String,
-    pub authentication_classes: Vec<Py<PyAny>>,
-    pub connect_callback: Option<Callback>,
-    pub receive_callback: Option<Callback>,
-    pub disconnect_callback: Option<Callback>,
+    pub(crate) authentication_classes: Vec<Py<PyAny>>,
+    pub(crate) connect_callback: Option<Callback>,
+    pub(crate) receive_callback: Option<Callback>,
+    pub(crate) disconnect_callback: Option<Callback>,
 }
 
 impl SocketView {
-    pub fn new(path: String, group: String, authentication_classes: Vec<Py<PyAny>>) -> Self {
+    pub(crate) fn new(path: String, group: String, authentication_classes: Vec<Py<PyAny>>) -> Self {
         Self {
             path: path,
             group: group,

@@ -1,6 +1,6 @@
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode, Uri};
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use axum::{routing::get, Router};
 use fastwebsockets::{upgrade, Frame, OpCode, WebSocketError};
 use pyo3::prelude::*;
@@ -11,7 +11,7 @@ use tokio::sync::{mpsc, watch, RwLock};
 
 use crate::callback::Callback;
 use crate::channel_store::ChannelStore;
-use crate::connection::{BaseConnection, Connection, IncomingConnection};
+use crate::connection::{Connection, IncomingConnection};
 use crate::socket_view::SocketView;
 use crate::{start_python_event_loop, Message};
 
@@ -32,7 +32,7 @@ impl AppState {
 }
 
 #[pyclass(frozen)]
-pub struct WebsocketServer {
+pub(crate) struct WebsocketServer {
     rt: Runtime,
     state: Arc<AppState>,
     context: RwLock<Vec<(String, String)>>,
@@ -41,7 +41,7 @@ pub struct WebsocketServer {
 }
 
 impl WebsocketServer {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         Self {
             rt: Runtime::new().expect("Unable to create tokio runtime"),
@@ -58,103 +58,12 @@ impl WebsocketServer {
         self.rt.block_on(async {
             let mut app = Router::new();
             for (group, path) in self.context.read().await.clone() {
+                let route_path = format!("/{path}");
                 app = app.route(
-                    &format!("/{path}"),
-                    get(
-                        |uri: Uri,
-                         headers: HeaderMap,
-                         ws: upgrade::IncomingUpgrade,
-                         State(state): State<Arc<AppState>>| async move {
-                            let scope = WebsocketServer::extract_scope(&uri, &headers);
-
-                            let handler = state.registry.read().await.get(&path).cloned();
-                            if let Some(ref handler) = handler {
-                                let handler_clone = Arc::clone(handler);
-                                let scope_clone = Python::attach(|py| scope.clone_ref(py));
-                                let combined_result = tokio::task::spawn_blocking(move || {
-                                    Python::attach(
-                                        |py| -> Result<Py<Connection>, (StatusCode, &'static str)> {
-                                            let view = handler_clone.borrow(py);
-                                            let auth_classes = &view.authentication_classes;
-
-                                            if !WebsocketServer::authenticated(
-                                                py,
-                                                auth_classes,
-                                                &scope_clone,
-                                            ) {
-                                                return Err((
-                                                    StatusCode::UNAUTHORIZED,
-                                                    "Authentication failed",
-                                                ));
-                                            }
-
-                                            if let Some(cb) = &view.connect_callback {
-                                                if let Err(e) = cb.invoke(py, (&scope_clone,)) {
-                                                    log::error!(
-                                                        "Error in websocket connect callback: {}",
-                                                        e
-                                                    );
-                                                    return Err((
-                                                        StatusCode::INTERNAL_SERVER_ERROR,
-                                                        "Connection failed",
-                                                    ));
-                                                }
-                                            }
-
-                                            IncomingConnection::upgrade(&scope_clone, py).map_err(
-                                                |e| {
-                                                    log::error!(
-                                                        "Error upgrading connection: {}",
-                                                        e
-                                                    );
-                                                    (
-                                                        StatusCode::INTERNAL_SERVER_ERROR,
-                                                        "Connection upgrade failed",
-                                                    )
-                                                },
-                                            )
-                                        },
-                                    )
-                                })
-                                .await;
-
-                                let conn = match combined_result {
-                                    Ok(Err((status, msg))) => {
-                                        return (status, msg).into_response();
-                                    }
-                                    Err(_) => {
-                                        return (
-                                            StatusCode::INTERNAL_SERVER_ERROR,
-                                            "Internal error",
-                                        )
-                                            .into_response();
-                                    }
-                                    Ok(Ok(conn)) => conn,
-                                };
-
-                                let (response, fut) = ws.upgrade().unwrap();
-                                let handler_clone = Arc::clone(handler);
-
-                                tokio::spawn(async move {
-                                    if let Err(e) = WebsocketServer::handle_client(
-                                        fut,
-                                        group,
-                                        state,
-                                        conn,
-                                        handler_clone,
-                                    )
-                                    .await
-                                    {
-                                        log::error!("Error in websocket connection: {}", e);
-                                    }
-                                });
-
-                                return response.into_response();
-                            }
-
-                            (StatusCode::NOT_FOUND, "Handler not found").into_response()
-                        },
-                    ),
+                    &route_path,
+                    get(move |uri, headers, ws, State(state)| {
+                        WebsocketServer::handle_ws_upgrade(uri, headers, ws, state, path, group)
+                    }),
                 );
             }
 
@@ -180,46 +89,10 @@ impl WebsocketServer {
         });
     }
 
-    fn extract_scope(uri: &Uri, header_map: &HeaderMap) -> Py<IncomingConnection> {
-        let path = uri.path().to_owned();
-        let query_string = uri.query().unwrap_or_default().to_owned();
-
-        let mut headers = HashMap::with_capacity(header_map.len());
-        for (name, value) in header_map.iter() {
-            if let Ok(v) = value.to_str() {
-                headers.insert(name.as_str().to_lowercase(), v.to_owned());
-            }
-        }
-
-        let mut cookies = HashMap::new();
-        if let Some(cookie_header) = header_map.get("cookie") {
-            if let Ok(cookie_str) = cookie_header.to_str() {
-                cookies.reserve(4);
-                for cookie in cookie_str.split(';') {
-                    let cookie = cookie.trim();
-                    if let Some((name, value)) = cookie.split_once('=') {
-                        cookies.insert(name.trim().to_owned(), value.trim().to_owned());
-                    }
-                }
-            }
-        }
-
-        Python::attach(|py| -> Py<IncomingConnection> {
-            Py::new(
-                py,
-                (
-                    IncomingConnection,
-                    BaseConnection::new(path, query_string, headers, cookies),
-                ),
-            )
-            .expect("Unable to create connection")
-        })
-    }
-
     fn authenticated(
         py: Python<'_>,
         auth_classes: &Vec<Py<PyAny>>,
-        scope: &Py<IncomingConnection>,
+        conn: &Py<IncomingConnection>,
     ) -> bool {
         if auth_classes.is_empty() {
             return true;
@@ -227,13 +100,83 @@ impl WebsocketServer {
 
         for authenticator in auth_classes {
             if let Ok(auth) = authenticator.getattr(py, "authenticate") {
-                if let Some(res) = auth.call1(py, (scope,)).ok().filter(|res| !res.is_none(py)) {
-                    scope.borrow_mut(py).as_super().user = Some(res);
+                if let Some(res) = auth.call1(py, (conn,)).ok().filter(|res| !res.is_none(py)) {
+                    conn.borrow_mut(py).as_super().user = Some(res);
                     return true;
                 }
             }
         }
         false
+    }
+
+    async fn handle_ws_upgrade(
+        uri: Uri,
+        headers: HeaderMap,
+        ws: upgrade::IncomingUpgrade,
+        state: Arc<AppState>,
+        path: String,
+        group: String,
+    ) -> Response {
+        let conn = IncomingConnection::py_new(&uri, &headers);
+
+        let Some(handler) = state.registry.read().await.get(&path).cloned() else {
+            return (StatusCode::NOT_FOUND, "Handler not found").into_response();
+        };
+
+        let conn = match WebsocketServer::authenticate_and_connect(handler.clone(), conn).await {
+            Ok(conn) => conn,
+            Err(response) => return response,
+        };
+
+        let (response, fut) = match ws.upgrade() {
+            Ok(upgrade) => upgrade,
+            Err(_) => return (StatusCode::BAD_REQUEST, "WebSocket upgrade failed").into_response(),
+        };
+
+        tokio::spawn(async move {
+            if let Err(e) = WebsocketServer::handle_client(fut, group, state, conn, handler).await {
+                log::error!("Error in websocket connection: {}", e);
+            }
+        });
+
+        response.into_response()
+    }
+
+    async fn authenticate_and_connect(
+        handler: Arc<Py<SocketView>>,
+        conn: Py<IncomingConnection>,
+    ) -> Result<Py<Connection>, Response> {
+        let result = tokio::task::spawn_blocking(move || {
+            Python::attach(|py| -> Result<Py<Connection>, (StatusCode, &'static str)> {
+                let view = handler.borrow(py);
+
+                if !WebsocketServer::authenticated(py, &view.authentication_classes, &conn) {
+                    return Err((StatusCode::UNAUTHORIZED, "Authentication failed"));
+                }
+
+                if let Some(cb) = &view.connect_callback {
+                    if let Err(e) = cb.invoke(py, (&conn,)) {
+                        log::error!("Error in websocket connect callback: {}", e);
+                        return Err((StatusCode::INTERNAL_SERVER_ERROR, "Connection failed"));
+                    }
+                }
+
+                IncomingConnection::upgrade(&conn, py).map_err(|e| {
+                    log::error!("Error upgrading connection: {}", e);
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Connection upgrade failed",
+                    )
+                })
+            })
+        })
+        .await;
+
+        match result {
+            Ok(Ok(conn)) => Ok(conn),
+            Ok(Err((status, msg))) => Err((status, msg).into_response()),
+            Err(_) => Err((StatusCode::INTERNAL_SERVER_ERROR, "Internal error").into_response()),
+        }
     }
 
     async fn send_listener<S>(
@@ -269,7 +212,7 @@ impl WebsocketServer {
 
     async fn receive_listener<S>(
         mut reader: fastwebsockets::FragmentCollectorRead<S>,
-        scope: Py<Connection>,
+        conn: Py<Connection>,
         receive_callback: Option<Callback>,
         disconnect_callback: Option<Callback>,
     ) where
@@ -289,10 +232,10 @@ impl WebsocketServer {
                             let payload_str = std::str::from_utf8(payload_bytes);
 
                             if let Err(e) = Python::attach(|py| match payload_str {
-                                Ok(s) => cb.invoke(py, (&scope, close_code, s)),
+                                Ok(s) => cb.invoke(py, (&conn, close_code, s)),
                                 Err(_) => {
                                     let s = String::from_utf8_lossy(payload_bytes);
-                                    cb.invoke(py, (&scope, close_code, s))
+                                    cb.invoke(py, (&conn, close_code, s))
                                 }
                             }) {
                                 log::error!("Error in disconnect callback: {}", e);
@@ -306,10 +249,10 @@ impl WebsocketServer {
                             let payload_str = std::str::from_utf8(payload_bytes);
 
                             if let Err(e) = Python::attach(|py| match payload_str {
-                                Ok(s) => cb.invoke(py, (&scope, s)),
+                                Ok(s) => cb.invoke(py, (&conn, s)),
                                 Err(_) => {
                                     let s = String::from_utf8_lossy(payload_bytes);
-                                    cb.invoke(py, (&scope, s))
+                                    cb.invoke(py, (&conn, s))
                                 }
                             }) {
                                 log::error!("Error in receive callback: {}", e);
@@ -327,7 +270,7 @@ impl WebsocketServer {
         fut: upgrade::UpgradeFut,
         group: String,
         state: Arc<AppState>,
-        scope: Py<Connection>,
+        conn: Py<Connection>,
         handler: Arc<Py<SocketView>>,
     ) -> Result<(), WebSocketError> {
         let (reader, writer) = fut.await?.split(tokio::io::split);
@@ -338,17 +281,12 @@ impl WebsocketServer {
         let channel_id = state.channels.register(&group, tx_arc.clone());
 
         let (receive_cb, disconnect_cb) = Python::attach(|py| {
-            let mut conn = scope.borrow_mut(py);
-            conn.sender = Some(tx_arc);
+            conn.borrow_mut(py).sender = Some(tx_arc);
 
             let view = handler.borrow(py);
             (
-                view.receive_callback
-                    .as_ref()
-                    .map(|cb| Callback::new(cb.func.clone_ref(py), cb.is_async)),
-                view.disconnect_callback
-                    .as_ref()
-                    .map(|cb| Callback::new(cb.func.clone_ref(py), cb.is_async)),
+                view.receive_callback.as_ref().map(|cb| cb.clone_ref(py)),
+                view.disconnect_callback.as_ref().map(|cb| cb.clone_ref(py)),
             )
         });
 
@@ -356,7 +294,7 @@ impl WebsocketServer {
 
         let mut receive_task = tokio::spawn(WebsocketServer::receive_listener(
             reader,
-            scope,
+            conn,
             receive_cb,
             disconnect_cb,
         ));

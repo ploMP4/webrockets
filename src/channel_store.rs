@@ -5,14 +5,14 @@ use tokio::sync::mpsc;
 
 use crate::Message;
 
-pub struct ChannelStore {
+pub(crate) struct ChannelStore {
     next_id: AtomicU64,
     data: DashMap<u64, Arc<mpsc::Sender<Arc<Message>>>>,
     grouped: DashMap<String, Vec<Arc<mpsc::Sender<Arc<Message>>>>>,
 }
 
 impl ChannelStore {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             next_id: AtomicU64::new(1),
             data: DashMap::new(),
@@ -20,7 +20,7 @@ impl ChannelStore {
         }
     }
 
-    pub fn register(&self, group: &str, tx: Arc<mpsc::Sender<Arc<Message>>>) -> u64 {
+    pub(crate) fn register(&self, group: &str, tx: Arc<mpsc::Sender<Arc<Message>>>) -> u64 {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
 
         self.data.insert(id, Arc::clone(&tx));
@@ -32,11 +32,11 @@ impl ChannelStore {
         id
     }
 
-    pub fn remove(&self, id: u64) {
+    pub(crate) fn remove(&self, id: u64) {
         self.data.remove(&id);
     }
 
-    pub fn broadcast(&self, groups: &[String], msg: Arc<Message>) {
+    pub(crate) fn broadcast(&self, groups: &[String], msg: Arc<Message>) {
         let capacity: usize = groups
             .iter()
             .filter_map(|g| self.grouped.get(g).map(|e| e.len()))

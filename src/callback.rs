@@ -4,21 +4,25 @@ use pyo3::types::PyFunction;
 
 use crate::{RUN_CORO_THREADSAFE, TASK_LOCALS};
 
-pub struct Callback {
-    pub func: Py<PyFunction>,
-    pub is_async: bool,
+pub(crate) struct Callback {
+    func: Py<PyFunction>,
+    is_async: bool,
 }
 
 impl Callback {
-    pub fn new(func: Py<PyFunction>, is_async: bool) -> Self {
+    pub(crate) fn new(func: Py<PyFunction>, is_async: bool) -> Self {
+        Self { func, is_async }
+    }
+
+    pub(crate) fn clone_ref(&self, py: Python<'_>) -> Self {
         Self {
-            func: func,
-            is_async: is_async,
+            func: self.func.clone_ref(py),
+            is_async: self.is_async,
         }
     }
 
     #[inline(always)]
-    pub fn invoke<'py, A>(&self, py: Python<'py>, args: A) -> PyResult<()>
+    pub(crate) fn invoke<'py, A>(&self, py: Python<'py>, args: A) -> PyResult<()>
     where
         A: PyCallArgs<'py>,
     {

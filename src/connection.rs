@@ -1,27 +1,24 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use axum::http::{HeaderMap, Uri};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use tokio::sync::mpsc;
 
 use crate::{Message, ASYNCIO_SLEEP};
 
-#[pyclass(subclass)]
-pub struct BaseConnection {
-    #[pyo3(get)]
-    pub path: String,
-    #[pyo3(get)]
-    pub query_string: String,
-    #[pyo3(get)]
-    pub headers: HashMap<String, String>,
-    #[pyo3(get)]
-    pub cookies: HashMap<String, String>,
-    #[pyo3(get)]
-    pub user: Option<Py<PyAny>>,
+#[pyclass(subclass, get_all)]
+pub(crate) struct BaseConnection {
+    path: String,
+    query_string: String,
+    headers: HashMap<String, String>,
+    cookies: HashMap<String, String>,
+    #[pyo3(set)]
+    pub(crate) user: Option<Py<PyAny>>,
 }
 
 impl BaseConnection {
-    pub fn new(
+    pub(crate) fn new(
         path: String,
         query_string: String,
         headers: HashMap<String, String>,
@@ -59,10 +56,49 @@ impl BaseConnection {
 }
 
 #[pyclass(extends=BaseConnection)]
-pub struct IncomingConnection;
+pub(crate) struct IncomingConnection;
 
 impl IncomingConnection {
-    pub fn upgrade(incoming: &Py<IncomingConnection>, py: Python<'_>) -> PyResult<Py<Connection>> {
+    pub(crate) fn py_new(uri: &Uri, header_map: &HeaderMap) -> Py<Self> {
+        let path = uri.path().to_owned();
+        let query_string = uri.query().unwrap_or_default().to_owned();
+
+        let mut headers = HashMap::with_capacity(header_map.len());
+        for (name, value) in header_map.iter() {
+            if let Ok(v) = value.to_str() {
+                headers.insert(name.as_str().to_lowercase(), v.to_owned());
+            }
+        }
+
+        let mut cookies = HashMap::new();
+        if let Some(cookie_header) = header_map.get("cookie") {
+            if let Ok(cookie_str) = cookie_header.to_str() {
+                cookies.reserve(4);
+                for cookie in cookie_str.split(';') {
+                    let cookie = cookie.trim();
+                    if let Some((name, value)) = cookie.split_once('=') {
+                        cookies.insert(name.trim().to_owned(), value.trim().to_owned());
+                    }
+                }
+            }
+        }
+
+        Python::attach(|py| -> Py<IncomingConnection> {
+            Py::new(
+                py,
+                (
+                    IncomingConnection,
+                    BaseConnection::new(path, query_string, headers, cookies),
+                ),
+            )
+            .expect("Unable to create connection")
+        })
+    }
+
+    pub(crate) fn upgrade(
+        incoming: &Py<IncomingConnection>,
+        py: Python<'_>,
+    ) -> PyResult<Py<Connection>> {
         let borrowed = incoming.borrow(py);
         let base = borrowed.as_super();
 
@@ -88,7 +124,7 @@ pub(crate) struct Connection {
 }
 
 impl Connection {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { sender: None }
     }
 }
