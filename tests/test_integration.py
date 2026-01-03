@@ -17,7 +17,7 @@ test_state = {
 def setup_routes():
     echo_view = Websocket("ws/echo/", "echo")
 
-    @echo_view.connect
+    @echo_view.connect("before")
     def echo_connect(conn: IncomingConnection):
         test_state["connected"].append(("echo", conn.path))
 
@@ -32,7 +32,7 @@ def setup_routes():
 
     chat_view = Websocket("ws/chat/", "chat")
 
-    @chat_view.connect
+    @chat_view.connect("before")
     def chat_connect(conn):
         test_state["connected"].append(("chat", conn.path))
 
@@ -47,7 +47,7 @@ def setup_routes():
 
     async_view = Websocket("ws/async/", "async")
 
-    @async_view.connect
+    @async_view.connect("before")
     async def async_connect(conn):
         await asyncio.sleep(0.1)
         test_state["connected"].append(("async", conn.path))

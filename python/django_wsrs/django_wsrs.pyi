@@ -1,8 +1,8 @@
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Generic, Literal, TypeVar, overload
 
 from django_wsrs.auth import BaseAuthentication
 
-class ConnectionScope:
+class BaseConnection:
     path: str
     query_string: str
     headers: dict[str, str]
@@ -12,26 +12,46 @@ class ConnectionScope:
     def __init__(
         self,
         path: str,
+        query_string: str,
         headers: dict[str, str],
         cookies: dict[str, str],
-        query_string: str,
     ) -> None: ...
     def get_cookie(self, name: str) -> str | None: ...
     def get_header(self, name: str) -> str | None: ...
+
+class IncomingConnection(BaseConnection): ...
+
+class Connection(BaseConnection):
+    def send(self, msg: str) -> None: ...
+    async def asend(self, msg: str) -> None: ...
+
+T_Connection = TypeVar("T_Connection", bound=IncomingConnection | Connection)
+
+class ConnectDecorator(Generic[T_Connection]):
+    def __call__(
+        self, func: Callable[[T_Connection], None]
+    ) -> Callable[[T_Connection], None]: ...
 
 class SocketView:
     path: str
     group: str
 
+    @overload
     def connect(
-        self, func: Callable[[ConnectionScope], None]
-    ) -> Callable[[ConnectionScope], None]: ...
+        self,
+        when: Literal["before"],
+    ) -> ConnectDecorator[IncomingConnection]: ...
+    @overload
+    def connect(
+        self,
+        when: Literal["after"],
+    ) -> ConnectDecorator[Connection]: ...
     def receive(
-        self, func: Callable[[ConnectionScope, int, str], None]
-    ) -> Callable[[ConnectionScope, int, str], None]: ...
+        self, func: Callable[[Connection, str], None]
+    ) -> Callable[[Connection, str], None]: ...
     def disconnect(
-        self, func: Callable[[ConnectionScope, int | None, str | None], None]
-    ) -> Callable[[ConnectionScope, int | None, str | None], None]: ...
+        self, func: Callable[[Connection, int | None, str | None], None]
+    ) -> Callable[[Connection, int | None, str | None], None]: ...
 
 class WebsocketServer:
     def __call__(
@@ -41,11 +61,6 @@ class WebsocketServer:
         authentication_classes: list[BaseAuthentication] = ...,
     ) -> SocketView: ...
     def start(self) -> None: ...
-    def send(self, channel_id: int, msg: str) -> None: ...
     def broadcast_text(self, groups: list[str], msg: str) -> None: ...
 
 Websocket: WebsocketServer
-
-LogLevel = Literal["debug", "info", "warn", "error"]
-
-def log(level: LogLevel, msg: str) -> None: ...

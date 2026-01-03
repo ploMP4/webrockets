@@ -35,11 +35,21 @@ class TestSocketViewCreation:
 
 
 class TestConnectDecorator:
-    def test_connect_decorator_registers_callback(self):
+    def test_connect_before_decorator_registers_callback(self):
         view = Websocket("ws/connect_test/", "connect_group")
         callback_called = []
 
-        @view.connect
+        @view.connect("before")
+        def on_connect(conn):
+            callback_called.append(conn)
+
+        assert callable(on_connect)
+
+    def test_connect_after_decorator_registers_callback(self):
+        view = Websocket("ws/connect_after_test/", "connect_after_group")
+        callback_called = []
+
+        @view.connect("after")
         def on_connect(conn):
             callback_called.append(conn)
 
@@ -48,13 +58,21 @@ class TestConnectDecorator:
     def test_connect_decorator_preserves_function(self):
         view = Websocket("ws/connect_preserve/", "connect_preserve")
 
-        @view.connect
+        @view.connect("before")
         def my_connect_handler(conn):
             return "connected"
 
         conn = Connection("/ws/", "", {}, {})
         result = my_connect_handler(conn)
         assert result == "connected"
+
+    def test_connect_invalid_argument_raises_error(self):
+        import pytest
+
+        view = Websocket("ws/connect_invalid/", "connect_invalid")
+
+        with pytest.raises(ValueError, match="'before' or 'after'"):
+            view.connect("invalid")
 
 
 class TestReceiveDecorator:
@@ -106,7 +124,7 @@ class TestFullViewSetup:
         view = Websocket("ws/full/", "full_group")
         events = []
 
-        @view.connect
+        @view.connect("before")
         def on_connect(conn):
             events.append(("connect", conn.path))
 
@@ -134,7 +152,7 @@ class TestFullViewSetup:
         view = Websocket("ws/conn_access/", "conn_access")
         captured_data = {}
 
-        @view.connect
+        @view.connect("before")
         def on_connect(conn):
             captured_data["path"] = conn.path
             captured_data["query"] = conn.query_string

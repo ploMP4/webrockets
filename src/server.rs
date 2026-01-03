@@ -154,9 +154,9 @@ impl WebsocketServer {
                     return Err((StatusCode::UNAUTHORIZED, "Authentication failed"));
                 }
 
-                if let Some(cb) = &view.connect_callback {
+                if let Some(cb) = &view.connect_before_callback {
                     if let Err(e) = cb.invoke(py, (&conn,)) {
-                        log::error!("Error in websocket connect callback: {}", e);
+                        log::error!("Error in websocket connect_before callback: {}", e);
                         return Err((StatusCode::INTERNAL_SERVER_ERROR, "Connection failed"));
                     }
                 }
@@ -266,7 +266,7 @@ impl WebsocketServer {
         }
     }
 
-    async fn handle_client<'a>(
+    async fn handle_client(
         fut: upgrade::UpgradeFut,
         group: String,
         state: Arc<AppState>,
@@ -284,6 +284,13 @@ impl WebsocketServer {
             conn.borrow_mut(py).sender = Some(tx_arc);
 
             let view = handler.borrow(py);
+
+            if let Some(cb) = &view.connect_after_callback {
+                if let Err(e) = cb.invoke(py, (&conn,)) {
+                    log::error!("Error in websocket connect_after callback: {}", e);
+                }
+            }
+
             (
                 view.receive_callback.as_ref().map(|cb| cb.clone_ref(py)),
                 view.disconnect_callback.as_ref().map(|cb| cb.clone_ref(py)),

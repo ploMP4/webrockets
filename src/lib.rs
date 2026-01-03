@@ -64,6 +64,8 @@ mod django_wsrs {
     #[pymodule_export]
     use super::server::WebsocketServer;
     #[pymodule_export]
+    use super::socket_view::ConnectDecorator;
+    #[pymodule_export]
     use super::socket_view::SocketView;
 
     #[pymodule_init]
