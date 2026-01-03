@@ -1,4 +1,8 @@
-use pyo3::prelude::*;
+use pyo3::{
+    exceptions::PyTypeError,
+    prelude::*,
+    types::{PyBytes, PyString},
+};
 use pyo3_async_runtimes::TaskLocals;
 use std::sync::{Arc, OnceLock};
 
@@ -48,7 +52,23 @@ fn start_python_event_loop(py: Python<'_>) -> PyResult<()> {
 enum Message {
     Text(Arc<str>),
     Binary(Arc<[u8]>),
-    Close(),
+    Close,
+}
+
+impl TryFrom<&Bound<'_, PyAny>> for Message {
+    type Error = PyErr;
+
+    fn try_from(value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        if value.is_instance_of::<PyString>() {
+            let s: &str = value.extract()?;
+            Ok(Message::Text(s.into()))
+        } else if value.is_instance_of::<PyBytes>() {
+            let b: &[u8] = value.extract()?;
+            Ok(Message::Binary(b.into()))
+        } else {
+            Err(PyTypeError::new_err("send() argument must be str or bytes"))
+        }
+    }
 }
 
 #[pymodule]

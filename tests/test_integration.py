@@ -45,6 +45,22 @@ def setup_routes():
     def chat_disconnect(conn, code=None, reason=None):
         test_state["disconnected"].append(("chat", code, reason))
 
+    binary_view = Websocket("ws/binary/", "binary")
+
+    @binary_view.connect("before")
+    def binary_connect(conn):
+        test_state["connected"].append(("binary", conn.path))
+
+    @binary_view.receive
+    def binary_receive(conn, data):
+        # Echo back the data as-is (preserving type)
+        conn.send(data)
+        test_state["messages"].append(("binary", type(data).__name__, data))
+
+    @binary_view.disconnect
+    def binary_disconnect(conn, code=None, reason=None):
+        test_state["disconnected"].append(("binary", code, reason))
+
     async_view = Websocket("ws/async/", "async")
 
     @async_view.connect("before")
@@ -249,6 +265,77 @@ class TestMessageTypes:
             await ws.send(large_msg)
             response = await asyncio.wait_for(ws.recv(), timeout=5.0)
             assert response == f"echo: {large_msg}"
+
+
+class TestBinaryMessages:
+    @pytest.mark.asyncio
+    async def test_send_and_receive_binary(self, ws_server):
+        async with websockets.connect(f"{ws_server}/ws/binary/") as ws:
+            binary_data = b"\x00\x01\x02\x03\xff\xfe"
+            await ws.send(binary_data)
+            response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+
+            assert response == binary_data
+            assert isinstance(response, bytes)
+
+    @pytest.mark.asyncio
+    async def test_binary_preserves_content(self, ws_server):
+        async with websockets.connect(f"{ws_server}/ws/binary/") as ws:
+            # Test various binary patterns
+            test_data = [
+                b"\x00" * 100,  # Null bytes
+                b"\xff" * 100,  # High bytes
+                bytes(range(256)),  # All byte values
+                b"mixed\x00binary\xffdata",  # Mixed content
+            ]
+
+            for data in test_data:
+                await ws.send(data)
+                response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                assert response == data
+                assert isinstance(response, bytes)
+
+    @pytest.mark.asyncio
+    async def test_text_still_works_on_binary_endpoint(self, ws_server):
+        async with websockets.connect(f"{ws_server}/ws/binary/") as ws:
+            await ws.send("hello text")
+            response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+
+            assert response == "hello text"
+            assert isinstance(response, str)
+
+    @pytest.mark.asyncio
+    async def test_callback_receives_correct_types(self, ws_server):
+        async with websockets.connect(f"{ws_server}/ws/binary/") as ws:
+            # Send text
+            await ws.send("text message")
+            await ws.recv()
+
+            # Send binary
+            await ws.send(b"\x00\x01\x02")
+            await ws.recv()
+
+        # Check that the callback received the correct types
+        binary_messages = [m for m in test_state["messages"] if m[0] == "binary"]
+        assert len(binary_messages) >= 2
+
+        # First should be str
+        assert binary_messages[-2][1] == "str"
+        assert binary_messages[-2][2] == "text message"
+
+        # Second should be bytes
+        assert binary_messages[-1][1] == "bytes"
+        assert binary_messages[-1][2] == b"\x00\x01\x02"
+
+    @pytest.mark.asyncio
+    async def test_large_binary_message(self, ws_server):
+        async with websockets.connect(f"{ws_server}/ws/binary/") as ws:
+            large_binary = bytes(range(256)) * 100  # 25.6 KB
+            await ws.send(large_binary)
+            response = await asyncio.wait_for(ws.recv(), timeout=5.0)
+
+            assert response == large_binary
+            assert isinstance(response, bytes)
 
 
 class TestAsyncCallbacks:

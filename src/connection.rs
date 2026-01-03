@@ -144,13 +144,14 @@ impl Connection {
         )
     }
 
-    fn send(&self, py: Python<'_>, msg: String) -> PyResult<()> {
+    fn send(&self, py: Python<'_>, msg: Py<PyAny>) -> PyResult<()> {
         let tx = self
             .sender
             .as_ref()
             .ok_or_else(|| PyRuntimeError::new_err("connection not established"))?;
 
-        let message = Arc::new(Message::Text(msg.into()));
+        let bound = msg.bind(py);
+        let message = Arc::new(Message::try_from(bound)?);
 
         match tx.try_send(Arc::clone(&message)) {
             Ok(()) => Ok(()),
@@ -167,13 +168,14 @@ impl Connection {
         }
     }
 
-    fn asend<'py>(&self, py: Python<'py>, msg: String) -> PyResult<Bound<'py, PyAny>> {
+    fn asend<'py>(&self, py: Python<'py>, msg: Py<PyAny>) -> PyResult<Bound<'py, PyAny>> {
         let tx = self
             .sender
             .as_ref()
             .ok_or_else(|| PyRuntimeError::new_err("connection not established"))?;
 
-        let message = Arc::new(Message::Text(msg.into()));
+        let bound = msg.bind(py);
+        let message = Arc::new(Message::try_from(bound)?);
 
         match tx.try_send(Arc::clone(&message)) {
             Ok(()) => {

@@ -199,7 +199,7 @@ impl WebsocketServer {
                         break;
                     }
                 }
-                Message::Close() => {
+                Message::Close => {
                     // let frame = Frame::close(code, reason);
                     // if tx.write_frame(frame).await.is_err() {
                     //     break;
@@ -243,7 +243,7 @@ impl WebsocketServer {
                         }
                         break;
                     }
-                    OpCode::Text | OpCode::Binary => {
+                    OpCode::Text => {
                         if let Some(cb) = &receive_callback {
                             let payload_bytes = &frame.payload[..];
                             let payload_str = std::str::from_utf8(payload_bytes);
@@ -255,6 +255,17 @@ impl WebsocketServer {
                                     cb.invoke(py, (&conn, s))
                                 }
                             }) {
+                                log::error!("Error in receive callback: {}", e);
+                            }
+                        }
+                    }
+                    OpCode::Binary => {
+                        if let Some(cb) = &receive_callback {
+                            let payload_bytes = &frame.payload[..];
+
+                            if let Err(e) =
+                                Python::attach(|py| cb.invoke(py, (&conn, payload_bytes)))
+                            {
                                 log::error!("Error in receive callback: {}", e);
                             }
                         }
