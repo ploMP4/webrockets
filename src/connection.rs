@@ -199,4 +199,60 @@ impl Connection {
             }
         }
     }
+
+    #[pyo3(signature = (code=1000, reason=""))]
+    fn close(&self, py: Python<'_>, code: u16, reason: &str) -> PyResult<()> {
+        let tx = self
+            .sender
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("connection not established"))?;
+
+        let message = Arc::new(Message::Close(code, reason.as_bytes().into()));
+
+        match tx.try_send(Arc::clone(&message)) {
+            Ok(()) => Ok(()),
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                let tx = Arc::clone(tx);
+                py.detach(|| {
+                    tokio::spawn(async move {
+                        let _ = tx.send(message).await;
+                    });
+                });
+                Ok(())
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => Ok(()),
+        }
+    }
+
+    #[pyo3(signature = (code=1000, reason=""))]
+    fn aclose<'py>(&self, py: Python<'py>, code: u16, reason: &str) -> PyResult<Bound<'py, PyAny>> {
+        let tx = self
+            .sender
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("connection not established"))?;
+
+        let message = Arc::new(Message::Close(code, reason.as_bytes().into()));
+
+        match tx.try_send(Arc::clone(&message)) {
+            Ok(()) => {
+                let sleep = ASYNCIO_SLEEP
+                    .get()
+                    .ok_or_else(|| PyRuntimeError::new_err("asyncio.sleep not initialized"))?;
+                Ok(sleep.call1(py, (0,))?.into_bound(py))
+            }
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                let tx = Arc::clone(tx);
+                pyo3_async_runtimes::tokio::future_into_py(py, async move {
+                    let _ = tx.send(message).await;
+                    Ok(())
+                })
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                let sleep = ASYNCIO_SLEEP
+                    .get()
+                    .ok_or_else(|| PyRuntimeError::new_err("asyncio.sleep not initialized"))?;
+                Ok(sleep.call1(py, (0,))?.into_bound(py))
+            }
+        }
+    }
 }

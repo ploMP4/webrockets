@@ -48,11 +48,10 @@ fn start_python_event_loop(py: Python<'_>) -> PyResult<()> {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 enum Message {
     Text(Arc<str>),
     Binary(Arc<[u8]>),
-    Close,
+    Close(u16, Arc<[u8]>),
 }
 
 impl TryFrom<&Bound<'_, PyAny>> for Message {

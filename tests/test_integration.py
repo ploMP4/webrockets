@@ -1,7 +1,7 @@
 import asyncio
 import os
 import threading
-from django_wsrs.django_wsrs import Connection, IncomingConnection
+from django_wsrs.django_wsrs import IncomingConnection
 import pytest
 import websockets
 
@@ -53,13 +53,35 @@ def setup_routes():
 
     @binary_view.receive
     def binary_receive(conn, data):
-        # Echo back the data as-is (preserving type)
         conn.send(data)
         test_state["messages"].append(("binary", type(data).__name__, data))
 
     @binary_view.disconnect
     def binary_disconnect(conn, code=None, reason=None):
         test_state["disconnected"].append(("binary", code, reason))
+
+    close_view = Websocket("ws/close/", "close")
+
+    @close_view.connect("before")
+    def close_connect(conn):
+        test_state["connected"].append(("close", conn.path))
+
+    @close_view.receive
+    def close_receive(conn, data):
+        # Parse close commands: "close", "close:1001", "close:1008:reason"
+        if data == "close":
+            conn.close()
+        elif data.startswith("close:"):
+            parts = data.split(":", 2)
+            code = int(parts[1])
+            reason = parts[2] if len(parts) > 2 else ""
+            conn.close(code, reason)
+        else:
+            conn.send(data)
+
+    @close_view.disconnect
+    def close_disconnect(conn, code=None, reason=None):
+        test_state["disconnected"].append(("close", code, reason))
 
     async_view = Websocket("ws/async/", "async")
 
@@ -307,23 +329,18 @@ class TestBinaryMessages:
     @pytest.mark.asyncio
     async def test_callback_receives_correct_types(self, ws_server):
         async with websockets.connect(f"{ws_server}/ws/binary/") as ws:
-            # Send text
             await ws.send("text message")
             await ws.recv()
 
-            # Send binary
             await ws.send(b"\x00\x01\x02")
             await ws.recv()
 
-        # Check that the callback received the correct types
         binary_messages = [m for m in test_state["messages"] if m[0] == "binary"]
         assert len(binary_messages) >= 2
 
-        # First should be str
         assert binary_messages[-2][1] == "str"
         assert binary_messages[-2][2] == "text message"
 
-        # Second should be bytes
         assert binary_messages[-1][1] == "bytes"
         assert binary_messages[-1][2] == b"\x00\x01\x02"
 
@@ -336,6 +353,63 @@ class TestBinaryMessages:
 
             assert response == large_binary
             assert isinstance(response, bytes)
+
+
+class TestServerClose:
+    @pytest.mark.asyncio
+    async def test_server_close_default(self, ws_server):
+        async with websockets.connect(f"{ws_server}/ws/close/") as ws:
+            await ws.send("close")
+
+            try:
+                await asyncio.wait_for(ws.recv(), timeout=2.0)
+                assert False, "Expected connection to close"
+            except websockets.ConnectionClosedOK as e:
+                assert e.code == 1000
+                assert e.reason == ""
+
+    @pytest.mark.asyncio
+    async def test_server_close_with_code(self, ws_server):
+        async with websockets.connect(f"{ws_server}/ws/close/") as ws:
+            await ws.send("close:1001")
+
+            try:
+                await asyncio.wait_for(ws.recv(), timeout=2.0)
+                assert False, "Expected connection to close"
+            except websockets.ConnectionClosed as e:
+                assert e.code == 1001
+
+    @pytest.mark.asyncio
+    async def test_server_close_with_code_and_reason(self, ws_server):
+        async with websockets.connect(f"{ws_server}/ws/close/") as ws:
+            await ws.send("close:1008:Policy violation")
+
+            try:
+                await asyncio.wait_for(ws.recv(), timeout=2.0)
+                assert False, "Expected connection to close"
+            except websockets.ConnectionClosed as e:
+                assert e.code == 1008
+                assert e.reason == "Policy violation"
+
+    @pytest.mark.asyncio
+    async def test_messages_before_close(self, ws_server):
+        async with websockets.connect(f"{ws_server}/ws/close/") as ws:
+            await ws.send("hello")
+            response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+            assert response == "hello"
+
+            await ws.send("world")
+            response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+            assert response == "world"
+
+            await ws.send("close:1000:Goodbye")
+
+            try:
+                await asyncio.wait_for(ws.recv(), timeout=2.0)
+                assert False, "Expected connection to close"
+            except websockets.ConnectionClosedOK as e:
+                assert e.code == 1000
+                assert e.reason == "Goodbye"
 
 
 class TestAsyncCallbacks:

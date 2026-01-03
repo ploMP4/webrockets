@@ -199,11 +199,11 @@ impl WebsocketServer {
                         break;
                     }
                 }
-                Message::Close => {
-                    // let frame = Frame::close(code, reason);
-                    // if tx.write_frame(frame).await.is_err() {
-                    //     break;
-                    // }
+                Message::Close(code, reason) => {
+                    let frame = Frame::close(*code, reason);
+                    if writer.write_frame(frame).await.is_err() {
+                        break;
+                    }
                     break;
                 }
             }
