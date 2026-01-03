@@ -6,6 +6,7 @@ from urllib.parse import parse_qs
 from django.contrib import auth
 from django.conf import settings
 from django.utils.module_loading import import_string
+from django_wsrs import IncomingConnection
 
 
 class AuthenticationFailed(Exception):
@@ -28,8 +29,8 @@ class BaseAuthentication(ABC):
 
     Example usage:
         class TokenAuthentication(BaseAuthentication):
-            def authenticate(self, scope: ConnectionScope) -> Any:
-                token = scope.get_header("Authorization")
+            def authenticate(self, conn: IncommingConnection) -> Any:
+                token = conn.get_header("Authorization")
                 if not token:
                     raise AuthenticationFailed("No token provided")
                 user = validate_token(token)
@@ -37,12 +38,12 @@ class BaseAuthentication(ABC):
     """
 
     @abstractmethod
-    def authenticate(self, scope) -> Any | None:
+    def authenticate(self, conn: IncomingConnection) -> Any | None:
         """
         Authenticate the WebSocket connection request.
 
         Args:
-            scope: ConnectionScope containing headers, cookies, path, and query string.
+            conn: IncommingConnection containing headers, cookies, path, and query string.
 
         Returns:
             A user if authentication succeeds.
@@ -77,8 +78,8 @@ class SessionAuthentication(BaseAuthentication):
         )
         return import_string(f"{engine}.SessionStore")
 
-    def authenticate(self, scope) -> Any | None:
-        session_id = scope.get_cookie(self.session_cookie_name)
+    def authenticate(self, conn: IncomingConnection) -> Any | None:
+        session_id = conn.get_cookie(self.session_cookie_name)
         if not session_id:
             raise AuthenticationFailed("No session cookie found", close_code=4001)
 
@@ -113,8 +114,8 @@ class CookieTokenAuthentication(BaseAuthentication):
 
     cookie_name: str = "auth_token"
 
-    def authenticate(self, scope) -> Any | None:
-        token = scope.get_cookie(self.cookie_name)
+    def authenticate(self, conn: IncomingConnection) -> Any | None:
+        token = conn.get_cookie(self.cookie_name)
         if not token:
             raise AuthenticationFailed(
                 f"No {self.cookie_name} cookie found", close_code=4001
@@ -166,8 +167,8 @@ class HeaderTokenAuthentication(BaseAuthentication):
     header_name: str = "authorization"
     keyword: str = "Bearer"
 
-    def authenticate(self, scope) -> Any | None:
-        auth_header = scope.get_header(self.header_name)
+    def authenticate(self, conn: IncomingConnection) -> Any | None:
+        auth_header = conn.get_header(self.header_name)
         if not auth_header:
             raise AuthenticationFailed(
                 f"No {self.header_name} header found", close_code=4001
@@ -215,8 +216,8 @@ class QueryStringTokenAuthentication(BaseAuthentication):
 
     query_param: str = "token"
 
-    def authenticate(self, scope) -> Any | None:
-        params = parse_qs(scope.query_string)
+    def authenticate(self, conn: IncomingConnection) -> Any | None:
+        params = parse_qs(conn.query_string)
         tokens = params.get(self.query_param, [])
 
         if not tokens:
