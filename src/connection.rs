@@ -5,7 +5,7 @@ use axum::http::{HeaderMap, Uri};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use tokio::sync::mpsc;
 
-use crate::{Message, ASYNCIO_SLEEP};
+use crate::{Message, ASYNC_NOOP};
 
 #[pyclass(subclass, get_all)]
 pub(crate) struct BaseConnection {
@@ -157,10 +157,8 @@ impl Connection {
             Ok(()) => Ok(()),
             Err(mpsc::error::TrySendError::Full(_)) => {
                 let tx = Arc::clone(tx);
-                py.detach(|| {
-                    tokio::spawn(async move {
-                        let _ = tx.send(message).await;
-                    });
+                tokio::spawn(async move {
+                    let _ = tx.send(message).await;
                 });
                 Ok(())
             }
@@ -191,7 +189,7 @@ impl Connection {
     }
 
     #[pyo3(signature = (code=1000, reason=""))]
-    fn close(&self, py: Python<'_>, code: u16, reason: &str) -> PyResult<()> {
+    fn close(&self, code: u16, reason: &str) -> PyResult<()> {
         let tx = self
             .sender
             .as_ref()
@@ -203,10 +201,8 @@ impl Connection {
             Ok(()) => Ok(()),
             Err(mpsc::error::TrySendError::Full(_)) => {
                 let tx = Arc::clone(tx);
-                py.detach(|| {
-                    tokio::spawn(async move {
-                        let _ = tx.send(message).await;
-                    });
+                tokio::spawn(async move {
+                    let _ = tx.send(message).await;
                 });
                 Ok(())
             }
@@ -239,9 +235,9 @@ impl Connection {
 
 #[inline]
 fn noop_coroutine(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
-    Ok(ASYNCIO_SLEEP
+    Ok(ASYNC_NOOP
         .get()
-        .ok_or_else(|| PyRuntimeError::new_err("asyncio.sleep not initialized"))?
-        .call1(py, (0,))?
+        .ok_or_else(|| PyRuntimeError::new_err("utils.noop not imported"))?
+        .call0(py)?
         .into_bound(py))
 }

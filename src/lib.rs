@@ -13,15 +13,17 @@ mod server;
 mod socket_view;
 
 static TASK_LOCALS: OnceLock<TaskLocals> = OnceLock::new();
-static ASYNCIO_SLEEP: OnceLock<Py<PyAny>> = OnceLock::new();
+static ASYNC_NOOP: OnceLock<Py<PyAny>> = OnceLock::new();
 
 fn start_python_event_loop(py: Python<'_>) -> PyResult<()> {
     let runtime_builder = tokio::runtime::Builder::new_multi_thread();
     pyo3_async_runtimes::tokio::init(runtime_builder);
 
     let asyncio = py.import("asyncio")?;
-    let sleep_fn = asyncio.getattr("sleep")?.unbind();
-    let _ = ASYNCIO_SLEEP.set(sleep_fn);
+
+    let utils = py.import("django_wsrs.utils")?;
+    let noop = utils.getattr("noop")?.unbind();
+    let _ = ASYNC_NOOP.set(noop);
 
     let loop_obj: Py<PyAny> = {
         let ev = match py.import("uvloop") {
