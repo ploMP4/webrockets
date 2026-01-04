@@ -13,7 +13,6 @@ mod server;
 mod socket_view;
 
 static TASK_LOCALS: OnceLock<TaskLocals> = OnceLock::new();
-static RUN_CORO_THREADSAFE: OnceLock<Py<PyAny>> = OnceLock::new();
 static ASYNCIO_SLEEP: OnceLock<Py<PyAny>> = OnceLock::new();
 
 fn start_python_event_loop(py: Python<'_>) -> PyResult<()> {
@@ -21,8 +20,6 @@ fn start_python_event_loop(py: Python<'_>) -> PyResult<()> {
     pyo3_async_runtimes::tokio::init(runtime_builder);
 
     let asyncio = py.import("asyncio")?;
-    let run_coro = asyncio.getattr("run_coroutine_threadsafe")?.unbind();
-    let _ = RUN_CORO_THREADSAFE.set(run_coro);
     let sleep_fn = asyncio.getattr("sleep")?.unbind();
     let _ = ASYNCIO_SLEEP.set(sleep_fn);
 

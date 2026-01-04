@@ -2,7 +2,7 @@ use pyo3::call::PyCallArgs;
 use pyo3::prelude::*;
 use pyo3::types::PyFunction;
 
-use crate::{RUN_CORO_THREADSAFE, TASK_LOCALS};
+use crate::TASK_LOCALS;
 
 pub(crate) struct Callback {
     func: Py<PyFunction>,
@@ -27,16 +27,11 @@ impl Callback {
         A: PyCallArgs<'py>,
     {
         if self.is_async {
-            let coro = self.func.call1(py, args)?;
+            let coro = self.func.bind(py).call1(args)?;
             let locals = TASK_LOCALS.get().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err("Asyncio loop not initialized")
+                pyo3::exceptions::PyRuntimeError::new_err("no running event loop")
             })?;
-            let run_coro = RUN_CORO_THREADSAFE.get().ok_or_else(|| {
-                pyo3::exceptions::PyRuntimeError::new_err(
-                    "run_coroutine_threadsafe not initialized",
-                )
-            })?;
-            run_coro.call1(py, (coro, locals.event_loop(py)))?;
+            tokio::spawn(pyo3_async_runtimes::into_future_with_locals(&locals, coro)?);
         } else {
             self.func.call1(py, args)?;
         }
