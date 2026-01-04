@@ -1,6 +1,6 @@
 import pytest
-from django_wsrs.auth import (
-    AuthenticationFailed,
+from pywsrs.auth import AuthenticationFailed
+from pywsrs.django.auth import (
     SessionAuthentication,
     CookieTokenAuthentication,
     HeaderTokenAuthentication,

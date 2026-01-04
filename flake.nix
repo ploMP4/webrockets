@@ -1,5 +1,5 @@
 {
-  description = "django-wsrs development environment";
+  description = "pywsrs development environment";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -17,7 +17,7 @@
         in
         {
           default = pkgs.mkShell {
-            name = "django_wsrs";
+            name = "pywsrs";
 
             buildInputs = with pkgs; [
               rustc

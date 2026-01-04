@@ -1,8 +1,13 @@
-from .django_wsrs import *
-from .utils import noop
+try:
+    import django
+except ImportError as e:
+    raise ImportError(
+        "Django is required for pywsrs.django. "
+        'Install with: pip install "pywsrs[django]"'
+    ) from e
+
 from .auth import (
     AuthenticationFailed,
-    BaseAuthentication,
     SessionAuthentication,
     CookieTokenAuthentication,
     HeaderTokenAuthentication,
@@ -11,14 +16,8 @@ from .auth import (
 
 __all__ = [
     "AuthenticationFailed",
-    "BaseAuthentication",
     "SessionAuthentication",
     "CookieTokenAuthentication",
     "HeaderTokenAuthentication",
     "QueryStringTokenAuthentication",
-    "noop",
 ]
-
-__doc__ = django_wsrs.__doc__
-if hasattr(django_wsrs, "__all__"):
-    __all__ += django_wsrs.__all__

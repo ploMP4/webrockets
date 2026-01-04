@@ -329,24 +329,11 @@ impl WebsocketServer {
 
 #[pymethods]
 impl WebsocketServer {
-    fn start(&self, py: Python<'_>) -> PyResult<()> {
-        let settings = py.import("django.conf")?.getattr("settings")?;
-
-        let host: String = settings
-            .getattr("WEBSOCKET_HOST")
-            .and_then(|v| v.extract())
-            .unwrap_or("0.0.0.0".to_string());
-
-        let port: String = settings
-            .getattr("WEBSOCKET_PORT")
-            .and_then(|v| {
-                v.extract::<String>()
-                    .or_else(|_| v.extract::<u16>().map(|n| n.to_string()))
-            })
-            .unwrap_or("46290".to_string());
-
+    #[pyo3(signature = (host="0.0.0.0", port=46290))]
+    fn start(&self, py: Python<'_>, host: &str, port: u16) -> PyResult<()> {
         start_python_event_loop(py)?;
-        py.detach(|| self.runserver(&host, &port));
+        let port_str = port.to_string();
+        py.detach(|| self.runserver(host, &port_str));
         Ok(())
     }
 

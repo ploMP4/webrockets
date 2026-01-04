@@ -2,8 +2,8 @@ from django.apps import AppConfig
 
 
 class WsRsAppConfig(AppConfig):
-    name = "django_wsrs"
-    verbose_name = "django_wsrs"
+    name = "pywsrs.django"
+    verbose_name = "pywsrs"
 
     def ready(self) -> None:
         pass

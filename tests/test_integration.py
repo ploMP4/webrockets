@@ -1,11 +1,10 @@
 import asyncio
 import os
 import threading
-from django_wsrs.django_wsrs import IncomingConnection
 import pytest
 import websockets
+from pywsrs import IncomingConnection, Websocket
 
-from django_wsrs import Websocket
 
 test_state = {
     "connected": [],

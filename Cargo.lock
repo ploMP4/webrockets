@@ -324,28 +324,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "django-wsrs"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "axum-extra",
- "axum-server",
- "dashmap",
- "fastwebsockets",
- "futures-util",
- "headers",
- "log",
- "pyo3",
- "pyo3-async-runtimes",
- "pyo3-log",
- "serde",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "dunce"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1024,6 +1002,28 @@ dependencies = [
  "pyo3-build-config",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "pywsrs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "axum-extra",
+ "axum-server",
+ "dashmap",
+ "fastwebsockets",
+ "futures-util",
+ "headers",
+ "log",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "pyo3-log",
+ "serde",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

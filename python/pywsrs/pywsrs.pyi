@@ -1,6 +1,6 @@
 from typing import Any, Callable, Coroutine, Generic, Literal, TypeVar, overload
 
-from django_wsrs.auth import BaseAuthentication
+from pywsrs.auth import BaseAuthentication
 
 class BaseConnection:
     path: str

@@ -19,7 +19,7 @@ def pytest_configure():
                 "django.contrib.contenttypes",
                 "django.contrib.auth",
                 "django.contrib.sessions",
-                "django_wsrs",
+                "pywsrs",
             ],
             SECRET_KEY="test-secret-key-for-testing-only",
             SESSION_ENGINE="django.contrib.sessions.backends.db",
@@ -96,7 +96,7 @@ def create_session(session_store, active_user):
 @pytest.fixture
 def websocket_scope():
     """Factory fixture to create Connection objects."""
-    from django_wsrs import Connection
+    from pywsrs import Connection
 
     def _create_scope(
         path="/ws/test/",

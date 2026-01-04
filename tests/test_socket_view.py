@@ -1,6 +1,5 @@
-from django_wsrs import Connection
-from django_wsrs.auth import BaseAuthentication
-from django_wsrs.django_wsrs import Websocket
+from pywsrs import Connection, Websocket
+from pywsrs.auth import BaseAuthentication
 
 
 class TestSocketViewCreation:

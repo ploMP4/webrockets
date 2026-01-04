@@ -3,7 +3,7 @@ requires = ["maturin>=1.9,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "django-wsrs"
+name = "pywsrs"
 requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Rust",
@@ -11,15 +11,9 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dynamic = ["version"]
-dependencies = [
-    "django>=4.2.25",
-]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=8.0",
-    "pytest-django>=4.5",
-]
+django = ["django>=4.2"]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]

@@ -1,4 +1,4 @@
-from django_wsrs import Connection
+from pywsrs import Connection
 
 
 class TestConnectionCreation:

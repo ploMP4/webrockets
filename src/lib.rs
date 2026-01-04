@@ -21,7 +21,7 @@ fn start_python_event_loop(py: Python<'_>) -> PyResult<()> {
 
     let asyncio = py.import("asyncio")?;
 
-    let utils = py.import("django_wsrs.utils")?;
+    let utils = py.import("pywsrs.utils")?;
     let noop = utils.getattr("noop")?.unbind();
     let _ = ASYNC_NOOP.set(noop);
 
@@ -70,7 +70,7 @@ impl TryFrom<&Bound<'_, PyAny>> for Message {
 }
 
 #[pymodule]
-mod django_wsrs {
+mod pywsrs {
     use pyo3::prelude::*;
 
     #[pymodule_export]
