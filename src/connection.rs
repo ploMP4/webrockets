@@ -178,12 +178,7 @@ impl Connection {
         let message = Arc::new(Message::try_from(bound)?);
 
         match tx.try_send(Arc::clone(&message)) {
-            Ok(()) => {
-                let sleep = ASYNCIO_SLEEP
-                    .get()
-                    .ok_or_else(|| PyRuntimeError::new_err("asyncio.sleep not initialized"))?;
-                Ok(sleep.call1(py, (0,))?.into_bound(py))
-            }
+            Ok(()) => noop_coroutine(py),
             Err(mpsc::error::TrySendError::Full(_)) => {
                 let tx = Arc::clone(tx);
                 pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -191,12 +186,7 @@ impl Connection {
                     Ok(())
                 })
             }
-            Err(mpsc::error::TrySendError::Closed(_)) => {
-                let sleep = ASYNCIO_SLEEP
-                    .get()
-                    .ok_or_else(|| PyRuntimeError::new_err("asyncio.sleep not initialized"))?;
-                Ok(sleep.call1(py, (0,))?.into_bound(py))
-            }
+            Err(mpsc::error::TrySendError::Closed(_)) => noop_coroutine(py),
         }
     }
 
@@ -234,12 +224,7 @@ impl Connection {
         let message = Arc::new(Message::Close(code, reason.as_bytes().into()));
 
         match tx.try_send(Arc::clone(&message)) {
-            Ok(()) => {
-                let sleep = ASYNCIO_SLEEP
-                    .get()
-                    .ok_or_else(|| PyRuntimeError::new_err("asyncio.sleep not initialized"))?;
-                Ok(sleep.call1(py, (0,))?.into_bound(py))
-            }
+            Ok(()) => noop_coroutine(py),
             Err(mpsc::error::TrySendError::Full(_)) => {
                 let tx = Arc::clone(tx);
                 pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -247,12 +232,16 @@ impl Connection {
                     Ok(())
                 })
             }
-            Err(mpsc::error::TrySendError::Closed(_)) => {
-                let sleep = ASYNCIO_SLEEP
-                    .get()
-                    .ok_or_else(|| PyRuntimeError::new_err("asyncio.sleep not initialized"))?;
-                Ok(sleep.call1(py, (0,))?.into_bound(py))
-            }
+            Err(mpsc::error::TrySendError::Closed(_)) => noop_coroutine(py),
         }
     }
+}
+
+#[inline]
+fn noop_coroutine(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
+    Ok(ASYNCIO_SLEEP
+        .get()
+        .ok_or_else(|| PyRuntimeError::new_err("asyncio.sleep not initialized"))?
+        .call1(py, (0,))?
+        .into_bound(py))
 }
