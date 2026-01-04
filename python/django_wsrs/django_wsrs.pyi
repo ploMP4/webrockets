@@ -1,4 +1,4 @@
-from typing import Any, Callable, Generic, Literal, TypeVar, overload
+from typing import Any, Callable, Coroutine, Generic, Literal, TypeVar, overload
 
 from django_wsrs.auth import BaseAuthentication
 
@@ -31,8 +31,8 @@ T_Connection = TypeVar("T_Connection", bound=IncomingConnection | Connection)
 
 class ConnectDecorator(Generic[T_Connection]):
     def __call__(
-        self, func: Callable[[T_Connection], None]
-    ) -> Callable[[T_Connection], None]: ...
+        self, func: Callable[[T_Connection], None | Coroutine[Any, Any, None]]
+    ) -> Callable[[T_Connection], None | Coroutine[Any, Any, None]]: ...
 
 class SocketView:
     path: str
@@ -49,11 +49,17 @@ class SocketView:
         when: Literal["after"],
     ) -> ConnectDecorator[Connection]: ...
     def receive(
-        self, func: Callable[[Connection, str | bytes], None]
-    ) -> Callable[[Connection, str | bytes], None]: ...
+        self,
+        func: Callable[[Connection, str | bytes], None | Coroutine[Any, Any, None]],
+    ) -> Callable[[Connection, str | bytes], None | Coroutine[Any, Any, None]]: ...
     def disconnect(
-        self, func: Callable[[Connection, int | None, str | None], None]
-    ) -> Callable[[Connection, int | None, str | None], None]: ...
+        self,
+        func: Callable[
+            [Connection, int | None, str | None], None | Coroutine[Any, Any, None]
+        ],
+    ) -> Callable[
+        [Connection, int | None, str | None], None | Coroutine[Any, Any, None]
+    ]: ...
 
 class WebsocketServer:
     def __call__(
