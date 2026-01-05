@@ -11,9 +11,11 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dynamic = ["version"]
+dependencies = []
 
 [project.optional-dependencies]
 django = ["django>=4.2"]
+schema = ["pydantic>=2.0"]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
@@ -30,4 +32,5 @@ dev = [
     "pytest-django>=4.11.1",
     "pytest-asyncio>=0.24.0",
     "websockets>=15.0",
+    "pydantic>=2.0"
 ]

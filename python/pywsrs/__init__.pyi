@@ -1,6 +1,18 @@
-from typing import Any, Callable, Coroutine, Generic, Literal, TypeVar, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Coroutine,
+    Generic,
+    Literal,
+    TypeVar,
+    overload,
+)
 
 from pywsrs.auth import BaseAuthentication
+
+if TYPE_CHECKING:
+    from pydantic import BaseModel
 
 class BaseConnection:
     path: str
@@ -28,15 +40,22 @@ class Connection(BaseConnection):
     async def aclose(self, code: int = 1000, reason: str = "") -> None: ...
 
 T_Connection = TypeVar("T_Connection", bound=IncomingConnection | Connection)
+T_Schema = TypeVar("T_Schema", bound="BaseModel" | str)
 
 class ConnectDecorator(Generic[T_Connection]):
     def __call__(
         self, func: Callable[[T_Connection], None | Coroutine[Any, Any, None]]
     ) -> Callable[[T_Connection], None | Coroutine[Any, Any, None]]: ...
 
+class ReceiveDecorator(Generic[T_Schema]):
+    def __call__(
+        self, func: Callable[[Connection, T_Schema], None | Coroutine[Any, Any, None]]
+    ) -> Callable[[Connection, T_Schema], None | Coroutine[Any, Any, None]]: ...
+
 class SocketView:
     path: str
     group: str
+    discriminator: str
 
     @overload
     def connect(
@@ -52,6 +71,12 @@ class SocketView:
         self,
         func: Callable[[Connection, str | bytes], None | Coroutine[Any, Any, None]],
     ) -> Callable[[Connection, str | bytes], None | Coroutine[Any, Any, None]]: ...
+    @overload
+    def receive_match(self, match: str, /) -> ReceiveDecorator[str]: ...
+    @overload
+    def receive_match(
+        self, match: str, /, schema: type[T_Schema]
+    ) -> ReceiveDecorator[T_Schema]: ...
     def disconnect(
         self,
         func: Callable[
@@ -66,9 +91,11 @@ class WebsocketServer:
         self,
         path: str,
         group: str,
-        authentication_classes: list[BaseAuthentication] = ...,
+        authentication_classes: list[BaseAuthentication] | None = None,
+        discriminator: str = "type",
     ) -> SocketView: ...
-    def start(self) -> None: ...
+    def start(self, host: str = "0.0.0.0", port: int = 46290) -> None: ...
+    def stop(self) -> None: ...
     def broadcast_text(self, groups: list[str], msg: str) -> None: ...
 
 Websocket: WebsocketServer

@@ -9,6 +9,7 @@ use std::sync::{Arc, OnceLock};
 mod callback;
 mod channel_store;
 mod connection;
+mod receive_handler;
 mod server;
 mod socket_view;
 
@@ -83,6 +84,8 @@ mod pywsrs {
     use super::server::WebsocketServer;
     #[pymodule_export]
     use super::socket_view::ConnectDecorator;
+    #[pymodule_export]
+    use super::socket_view::ReceiveDecorator;
     #[pymodule_export]
     use super::socket_view::SocketView;
 

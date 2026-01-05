@@ -1,8 +1,10 @@
 import asyncio
+import json
 import os
 import threading
 import pytest
 import websockets
+from pydantic import BaseModel
 from pywsrs import IncomingConnection, Websocket
 
 
@@ -11,6 +13,44 @@ test_state = {
     "messages": [],
     "disconnected": [],
 }
+
+# Pattern matching test state
+pattern_state = {
+    "chat_messages": [],
+    "join_events": [],
+    "leave_events": [],
+    "unknown_messages": [],
+    "ping_events": [],
+    "pong_events": [],
+}
+
+
+# Pydantic models for pattern matching tests
+class ChatMessage(BaseModel):
+    type: str
+    content: str
+    room: str
+
+
+class JoinRoom(BaseModel):
+    type: str
+    room: str
+    username: str
+
+
+class LeaveRoom(BaseModel):
+    type: str
+    room: str
+
+
+class PingMessage(BaseModel):
+    action: str
+    timestamp: int
+
+
+class PongMessage(BaseModel):
+    action: str
+    timestamp: int
 
 
 def setup_routes():
@@ -99,6 +139,63 @@ def setup_routes():
         await asyncio.sleep(0.1)
         test_state["disconnected"].append(("async", code, reason))
 
+    # Pattern matching routes (default discriminator is "type")
+    pattern_view = Websocket("ws/pattern/", "pattern")
+
+    @pattern_view.receive_match("chat", schema=ChatMessage)
+    def on_chat(conn, data: ChatMessage):
+        pattern_state["chat_messages"].append(
+            {
+                "content": data.content,
+                "room": data.room,
+            }
+        )
+        conn.send(json.dumps({"status": "received", "type": "chat"}))
+
+    @pattern_view.receive_match("join", schema=JoinRoom)
+    def on_join(conn, data: JoinRoom):
+        pattern_state["join_events"].append(
+            {
+                "room": data.room,
+                "username": data.username,
+            }
+        )
+        conn.send(json.dumps({"status": "joined", "room": data.room}))
+
+    @pattern_view.receive_match("leave", schema=LeaveRoom)
+    def on_leave(conn, data: LeaveRoom):
+        pattern_state["leave_events"].append({"room": data.room})
+        conn.send(json.dumps({"status": "left", "room": data.room}))
+
+    @pattern_view.receive
+    def on_fallback(conn, data):
+        pattern_state["unknown_messages"].append(data)
+        conn.send(json.dumps({"status": "unknown", "raw": str(data)[:100]}))
+
+    # Custom discriminator test
+    custom_view = Websocket("ws/custom-disc/", "custom-disc", discriminator="action")
+
+    @custom_view.receive_match("ping", schema=PingMessage)
+    def on_ping(conn, data: PingMessage):
+        pattern_state["ping_events"].append({"timestamp": data.timestamp})
+        conn.send(json.dumps({"action": "pong", "timestamp": data.timestamp}))
+
+    @custom_view.receive_match("pong", schema=PongMessage)
+    def on_pong(conn, data: PongMessage):
+        pattern_state["pong_events"].append({"timestamp": data.timestamp})
+        conn.send(json.dumps({"status": "pong_received"}))
+
+    # Raw match without schema
+    raw_view = Websocket("ws/raw-match/", "raw-match")
+
+    @raw_view.receive_match("echo")
+    def on_echo_raw(conn, data: str):
+        conn.send(f"raw: {data}")
+
+    @raw_view.receive
+    def on_raw_fallback(conn, data):
+        conn.send(f"fallback: {data}")
+
 
 @pytest.fixture(scope="module")
 def ws_server():
@@ -128,6 +225,12 @@ def cleanup_state():
     test_state["connected"] = []
     test_state["messages"] = []
     test_state["disconnected"] = []
+    pattern_state["chat_messages"] = []
+    pattern_state["join_events"] = []
+    pattern_state["leave_events"] = []
+    pattern_state["unknown_messages"] = []
+    pattern_state["ping_events"] = []
+    pattern_state["pong_events"] = []
     yield
 
 
@@ -425,3 +528,136 @@ class TestAsyncCallbacks:
         assert any(c[0] == "async" for c in test_state["connected"])
         assert len(test_state["disconnected"]) >= 1
         assert any(d[0] == "async" for d in test_state["disconnected"])
+
+
+class TestPatternMatching:
+    @pytest.mark.asyncio
+    async def test_match_chat_message(self, ws_server):
+        async with websockets.connect(f"{ws_server}/ws/pattern/") as ws:
+            msg = {"type": "chat", "content": "Hello!", "room": "general"}
+            await ws.send(json.dumps(msg))
+            response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+
+            assert json.loads(response) == {"status": "received", "type": "chat"}
+            assert len(pattern_state["chat_messages"]) == 1
+            assert pattern_state["chat_messages"][0]["content"] == "Hello!"
+            assert pattern_state["chat_messages"][0]["room"] == "general"
+
+    @pytest.mark.asyncio
+    async def test_match_join_message(self, ws_server):
+        async with websockets.connect(f"{ws_server}/ws/pattern/") as ws:
+            msg = {"type": "join", "room": "lobby", "username": "alice"}
+            await ws.send(json.dumps(msg))
+            response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+
+            assert json.loads(response) == {"status": "joined", "room": "lobby"}
+            assert len(pattern_state["join_events"]) == 1
+            assert pattern_state["join_events"][0]["username"] == "alice"
+
+    @pytest.mark.asyncio
+    async def test_match_leave_message(self, ws_server):
+        async with websockets.connect(f"{ws_server}/ws/pattern/") as ws:
+            msg = {"type": "leave", "room": "lobby"}
+            await ws.send(json.dumps(msg))
+            response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+
+            assert json.loads(response) == {"status": "left", "room": "lobby"}
+            assert len(pattern_state["leave_events"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_fallback_for_unknown_type(self, ws_server):
+        async with websockets.connect(f"{ws_server}/ws/pattern/") as ws:
+            msg = {"type": "unknown_action", "data": "test"}
+            await ws.send(json.dumps(msg))
+            response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+
+            resp_data = json.loads(response)
+            assert resp_data["status"] == "unknown"
+            assert len(pattern_state["unknown_messages"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_fallback_for_non_json(self, ws_server):
+        async with websockets.connect(f"{ws_server}/ws/pattern/") as ws:
+            await ws.send("not valid json")
+            response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+
+            resp_data = json.loads(response)
+            assert resp_data["status"] == "unknown"
+            assert "not valid json" in resp_data["raw"]
+
+    @pytest.mark.asyncio
+    async def test_multiple_messages_different_types(self, ws_server):
+        async with websockets.connect(f"{ws_server}/ws/pattern/") as ws:
+            # Send chat message
+            await ws.send(json.dumps({"type": "chat", "content": "msg1", "room": "r1"}))
+            await asyncio.wait_for(ws.recv(), timeout=2.0)
+
+            # Send join
+            await ws.send(json.dumps({"type": "join", "room": "r2", "username": "bob"}))
+            await asyncio.wait_for(ws.recv(), timeout=2.0)
+
+            # Send another chat
+            await ws.send(json.dumps({"type": "chat", "content": "msg2", "room": "r1"}))
+            await asyncio.wait_for(ws.recv(), timeout=2.0)
+
+            assert len(pattern_state["chat_messages"]) == 2
+            assert len(pattern_state["join_events"]) == 1
+
+
+class TestCustomDiscriminator:
+    @pytest.mark.asyncio
+    async def test_custom_discriminator_ping(self, ws_server):
+        async with websockets.connect(f"{ws_server}/ws/custom-disc/") as ws:
+            msg = {"action": "ping", "timestamp": 12345}
+            await ws.send(json.dumps(msg))
+            response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+
+            resp_data = json.loads(response)
+            assert resp_data["action"] == "pong"
+            assert resp_data["timestamp"] == 12345
+            assert len(pattern_state["ping_events"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_custom_discriminator_pong(self, ws_server):
+        async with websockets.connect(f"{ws_server}/ws/custom-disc/") as ws:
+            msg = {"action": "pong", "timestamp": 67890}
+            await ws.send(json.dumps(msg))
+            response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+
+            assert json.loads(response) == {"status": "pong_received"}
+            assert len(pattern_state["pong_events"]) == 1
+
+
+class TestRawMatchWithoutSchema:
+    @pytest.mark.asyncio
+    async def test_raw_match_receives_json_string(self, ws_server):
+        async with websockets.connect(f"{ws_server}/ws/raw-match/") as ws:
+            msg = {"type": "echo", "data": "test123"}
+            await ws.send(json.dumps(msg))
+            response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+
+            # Handler receives raw JSON string, not parsed object
+            assert response.startswith("raw: ")
+            assert "echo" in response
+            assert "test123" in response
+
+    @pytest.mark.asyncio
+    async def test_raw_fallback(self, ws_server):
+        async with websockets.connect(f"{ws_server}/ws/raw-match/") as ws:
+            await ws.send("plain text message")
+            response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+
+            assert response == "fallback: plain text message"
+
+
+class TestPydanticValidation:
+    @pytest.mark.asyncio
+    async def test_extra_fields_accepted(self, ws_server):
+        async with websockets.connect(f"{ws_server}/ws/pattern/") as ws:
+            # Pydantic v2 ignores extra fields by default
+            msg = {"type": "chat", "content": "Hi", "room": "test", "extra": "ignored"}
+            await ws.send(json.dumps(msg))
+            response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+
+            assert json.loads(response) == {"status": "received", "type": "chat"}
+            assert len(pattern_state["chat_messages"]) == 1

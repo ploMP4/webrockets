@@ -12,6 +12,7 @@ use tokio::sync::{mpsc, watch, RwLock};
 use crate::callback::Callback;
 use crate::channel_store::ChannelStore;
 use crate::connection::{Connection, IncomingConnection};
+use crate::receive_handler::ReceiveHandler;
 use crate::socket_view::SocketView;
 use crate::{start_python_event_loop, Message};
 
@@ -38,6 +39,12 @@ pub(crate) struct WebsocketServer {
     context: RwLock<Vec<(String, String)>>,
     shutdown_tx: watch::Sender<bool>,
     shutdown_rx: watch::Receiver<bool>,
+}
+
+struct ReceiveCallback {
+    generic: Option<Callback>,
+    handlers: Vec<ReceiveHandler>,
+    discriminator: String,
 }
 
 impl WebsocketServer {
@@ -213,7 +220,7 @@ impl WebsocketServer {
     async fn receive_listener<S>(
         mut reader: fastwebsockets::FragmentCollectorRead<S>,
         conn: Py<Connection>,
-        receive_callback: Option<Callback>,
+        receive_callback: ReceiveCallback,
         disconnect_callback: Option<Callback>,
     ) where
         S: Unpin + tokio::io::AsyncRead,
@@ -244,25 +251,57 @@ impl WebsocketServer {
                         break;
                     }
                     OpCode::Text => {
-                        if let Some(cb) = &receive_callback {
-                            let payload_bytes = &frame.payload[..];
-                            let payload_str = std::str::from_utf8(payload_bytes);
-
-                            if let Err(e) = Python::attach(|py| match payload_str {
-                                Ok(s) => cb.invoke(py, (&conn, s)),
-                                Err(_) => {
-                                    let s = String::from_utf8_lossy(payload_bytes);
-                                    cb.invoke(py, (&conn, s))
-                                }
-                            }) {
-                                log::error!("Error in receive callback: {}", e);
+                        let payload_bytes = &frame.payload[..];
+                        let payload_str = match std::str::from_utf8(payload_bytes) {
+                            Ok(s) => s,
+                            Err(_) => {
+                                log::error!("Invalid UTF-8 in WebSocket text frame");
+                                continue;
                             }
-                        }
+                        };
+
+                        let handler = match serde_json::from_str::<serde_json::Value>(payload_str) {
+                            Ok(json_value) => json_value
+                                .get(&receive_callback.discriminator)
+                                .and_then(|v| match v {
+                                    serde_json::Value::String(s) => Some(s.as_str()),
+                                    _ => None,
+                                })
+                                .and_then(|v| {
+                                    receive_callback.handlers.iter().find(|h| h.matches(v))
+                                }),
+                            Err(_) => None,
+                        };
+
+                        match handler {
+                            Some(handler) => {
+                                Python::attach(|py| {
+                                    if let Err(e) = match &handler.schema {
+                                        Some(schema) => handler.callback.invoke_with_schema(
+                                            py,
+                                            (&conn, payload_str),
+                                            schema,
+                                        ),
+                                        None => handler.callback.invoke(py, (&conn, payload_str)),
+                                    } {
+                                        log::error!("Error in receive callback: {}", e);
+                                    };
+                                });
+                            }
+                            None => {
+                                if let Some(cb) = &receive_callback.generic {
+                                    if let Err(e) =
+                                        Python::attach(|py| cb.invoke(py, (&conn, payload_str)))
+                                    {
+                                        log::error!("Error in receive callback: {}", e);
+                                    }
+                                }
+                            }
+                        };
                     }
                     OpCode::Binary => {
-                        if let Some(cb) = &receive_callback {
+                        if let Some(cb) = &receive_callback.generic {
                             let payload_bytes = &frame.payload[..];
-
                             if let Err(e) =
                                 Python::attach(|py| cb.invoke(py, (&conn, payload_bytes)))
                             {
@@ -303,7 +342,15 @@ impl WebsocketServer {
             }
 
             (
-                view.receive_callback.as_ref().map(|cb| cb.clone_ref(py)),
+                ReceiveCallback {
+                    generic: view.generic_receive.as_ref().map(|cb| cb.clone_ref(py)),
+                    handlers: view
+                        .receive_handlers
+                        .iter()
+                        .map(|h| h.clone_ref(py))
+                        .collect(),
+                    discriminator: view.discriminator.clone(),
+                },
                 view.disconnect_callback.as_ref().map(|cb| cb.clone_ref(py)),
             )
         });
@@ -341,13 +388,14 @@ impl WebsocketServer {
         let _ = self.shutdown_tx.send(true);
     }
 
-    #[pyo3(signature = (path, group, authentication_classes = None))]
+    #[pyo3(signature = (path, group, authentication_classes = None, discriminator = "type".to_string()))]
     fn __call__(
         &self,
         py: Python<'_>,
         path: String,
         group: String,
         authentication_classes: Option<Vec<Py<PyAny>>>,
+        discriminator: String,
     ) -> PyResult<Py<SocketView>> {
         self.context
             .blocking_write()
@@ -359,6 +407,7 @@ impl WebsocketServer {
                 path.clone(),
                 group,
                 authentication_classes.unwrap_or(Vec::new()),
+                discriminator,
             ),
         )?;
         let instance_ref = instance.clone_ref(py);

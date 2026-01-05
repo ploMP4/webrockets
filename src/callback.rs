@@ -2,6 +2,7 @@ use pyo3::call::PyCallArgs;
 use pyo3::prelude::*;
 use pyo3::types::PyFunction;
 
+use crate::connection::Connection;
 use crate::TASK_LOCALS;
 
 pub(crate) struct Callback {
@@ -34,6 +35,32 @@ impl Callback {
             tokio::spawn(pyo3_async_runtimes::into_future_with_locals(&locals, coro)?);
         } else {
             self.func.call1(py, args)?;
+        }
+
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub(crate) fn invoke_with_schema(
+        &self,
+        py: Python<'_>,
+        args: (&Py<Connection>, &str),
+        schema: &Py<PyAny>,
+    ) -> PyResult<()> {
+        let (conn, json_str) = args;
+
+        let validated = schema
+            .bind(py)
+            .call_method1("model_validate_json", (json_str,))?;
+
+        if self.is_async {
+            let coro = self.func.bind(py).call1((conn, validated))?;
+            let locals = TASK_LOCALS.get().ok_or_else(|| {
+                pyo3::exceptions::PyRuntimeError::new_err("no running event loop")
+            })?;
+            tokio::spawn(pyo3_async_runtimes::into_future_with_locals(&locals, coro)?);
+        } else {
+            self.func.call1(py, (conn, validated))?;
         }
 
         Ok(())
