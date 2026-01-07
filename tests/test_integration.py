@@ -467,8 +467,8 @@ class TestServerClose:
                 await asyncio.wait_for(ws.recv(), timeout=2.0)
                 assert False, "Expected connection to close"
             except websockets.ConnectionClosedOK as e:
-                assert e.code == 1000
-                assert e.reason == ""
+                assert e.rcvd.code == 1000
+                assert e.rcvd.reason == ""
 
     @pytest.mark.asyncio
     async def test_server_close_with_code(self, ws_server):
@@ -479,7 +479,7 @@ class TestServerClose:
                 await asyncio.wait_for(ws.recv(), timeout=2.0)
                 assert False, "Expected connection to close"
             except websockets.ConnectionClosed as e:
-                assert e.code == 1001
+                assert e.rcvd.code == 1001
 
     @pytest.mark.asyncio
     async def test_server_close_with_code_and_reason(self, ws_server):
@@ -490,8 +490,8 @@ class TestServerClose:
                 await asyncio.wait_for(ws.recv(), timeout=2.0)
                 assert False, "Expected connection to close"
             except websockets.ConnectionClosed as e:
-                assert e.code == 1008
-                assert e.reason == "Policy violation"
+                assert e.rcvd.code == 1008
+                assert e.rcvd.reason == "Policy violation"
 
     @pytest.mark.asyncio
     async def test_messages_before_close(self, ws_server):
@@ -510,8 +510,8 @@ class TestServerClose:
                 await asyncio.wait_for(ws.recv(), timeout=2.0)
                 assert False, "Expected connection to close"
             except websockets.ConnectionClosedOK as e:
-                assert e.code == 1000
-                assert e.reason == "Goodbye"
+                assert e.rcvd.code == 1000
+                assert e.rcvd.reason == "Goodbye"
 
 
 class TestAsyncCallbacks:
