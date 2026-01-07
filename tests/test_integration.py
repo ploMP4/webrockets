@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import threading
+import time
 import pytest
 import websockets
 from pydantic import BaseModel
@@ -14,7 +15,6 @@ test_state = {
     "disconnected": [],
 }
 
-# Pattern matching test state
 pattern_state = {
     "chat_messages": [],
     "join_events": [],
@@ -25,7 +25,6 @@ pattern_state = {
 }
 
 
-# Pydantic models for pattern matching tests
 class ChatMessage(BaseModel):
     type: str
     content: str
@@ -211,6 +210,7 @@ def ws_server():
 
     server_thread = threading.Thread(target=Websocket.start)
     server_thread.start()
+    time.sleep(0.5)  # Wait for server to start
 
     yield "ws://127.0.0.1:46290"
 

@@ -4,6 +4,7 @@ use axum::response::{IntoResponse, Response};
 use axum::{routing::get, Router};
 use fastwebsockets::{upgrade, Frame, OpCode, WebSocketError};
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
@@ -19,14 +20,14 @@ use crate::{start_python_event_loop, Message};
 const CHANNEL_BUFFER_SIZE: usize = 10000;
 
 struct AppState {
-    channels: ChannelStore,
+    channels: Arc<ChannelStore>,
     registry: RwLock<HashMap<String, Arc<Py<SocketView>>>>,
 }
 
 impl AppState {
     fn new() -> Self {
         Self {
-            channels: ChannelStore::new(),
+            channels: Arc::new(ChannelStore::new()),
             registry: RwLock::new(HashMap::new()),
         }
     }
@@ -59,8 +60,14 @@ impl WebsocketServer {
         }
     }
 
-    fn runserver(&self, host: &str, port: &str) {
+    fn runserver(
+        &self,
+        host: &str,
+        port: &str,
+        broker_config: Option<crate::broker::config::BrokerConfig>,
+    ) {
         let mut shutdown_rx = self.shutdown_rx.clone();
+        shutdown_rx.mark_unchanged();
 
         self.rt.block_on(async {
             let mut app = Router::new();
@@ -72,6 +79,12 @@ impl WebsocketServer {
                         WebsocketServer::handle_ws_upgrade(uri, headers, ws, state, path, group)
                     }),
                 );
+            }
+
+            if let Some(config) = broker_config {
+                let channels = Arc::clone(&self.state.channels);
+                let shutdown = self.shutdown_rx.clone();
+                tokio::spawn(crate::broker::broker_listener(config, channels, shutdown));
             }
 
             let listener = tokio::net::TcpListener::bind(format!("{}:{}", host, port))
@@ -376,11 +389,22 @@ impl WebsocketServer {
 
 #[pymethods]
 impl WebsocketServer {
-    #[pyo3(signature = (host="0.0.0.0", port=46290))]
-    fn start(&self, py: Python<'_>, host: &str, port: u16) -> PyResult<()> {
+    #[pyo3(signature = (host="0.0.0.0", port=46290, broker=None))]
+    fn start(
+        &self,
+        py: Python<'_>,
+        host: &str,
+        port: u16,
+        broker: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<()> {
         start_python_event_loop(py)?;
+
+        let broker_config = broker
+            .map(|dict| crate::broker::config::BrokerConfig::from_py(dict))
+            .transpose()?;
+
         let port_str = port.to_string();
-        py.detach(|| self.runserver(host, &port_str));
+        py.detach(|| self.runserver(host, &port_str, broker_config));
         Ok(())
     }
 

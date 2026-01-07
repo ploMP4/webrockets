@@ -5,6 +5,7 @@ from typing import (
     Coroutine,
     Generic,
     Literal,
+    TypedDict,
     TypeVar,
     overload,
 )
@@ -13,6 +14,24 @@ from pywsrs.auth import BaseAuthentication
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
+
+class _RedisBrokerConfigOptional(TypedDict, total=False):
+    url: str  # default: "redis://localhost:6379"
+    channel: str  # default: "ws_broadcast"
+
+class RedisBrokerConfig(_RedisBrokerConfigOptional):
+    type: Literal["redis"]
+
+class _AmqpBrokerConfigOptional(TypedDict, total=False):
+    url: str  # default: "amqp://localhost:5672"
+    exchange: str  # default: "ws_broadcast"
+    queue: str | None  # default: auto-generated UUID
+    routing_key: str  # default: "#"
+
+class AmqpBrokerConfig(_AmqpBrokerConfigOptional):
+    type: Literal["amqp"]
+
+BrokerConfig = RedisBrokerConfig | AmqpBrokerConfig
 
 class BaseConnection:
     path: str
@@ -94,8 +113,44 @@ class WebsocketServer:
         authentication_classes: list[BaseAuthentication] | None = None,
         discriminator: str = "type",
     ) -> SocketView: ...
-    def start(self, host: str = "0.0.0.0", port: int = 46290) -> None: ...
+    def start(
+        self,
+        host: str = "0.0.0.0",
+        port: int = 46290,
+        broker: BrokerConfig | None = None,
+    ) -> None: ...
     def stop(self) -> None: ...
     def broadcast_text(self, groups: list[str], msg: str) -> None: ...
 
 Websocket: WebsocketServer
+
+# Broker functions for external broadcasting (e.g., from Django views, Celery tasks)
+def setup_broadcast(config: BrokerConfig) -> None:
+    """
+    Initialize the broadcaster with a broker configuration.
+    Must be called before using broadcast() or abroadcast().
+    Can only be called once per process (uses OnceLock).
+    """
+    ...
+
+def broadcast(groups: list[str], message: str) -> None:
+    """
+    Publish a message to the specified groups via the configured broker.
+    This is a blocking call that publishes synchronously.
+
+    Args:
+        groups: List of group names to broadcast to
+        message: The message payload (typically JSON string)
+    """
+    ...
+
+async def abroadcast(groups: list[str], message: str) -> None:
+    """
+    Async version of broadcast().
+    Publish a message to the specified groups via the configured broker.
+
+    Args:
+        groups: List of group names to broadcast to
+        message: The message payload (typically JSON string)
+    """
+    ...

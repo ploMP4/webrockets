@@ -26,6 +26,10 @@ tokio = { version = "1.48.0", features = ["rt", "rt-multi-thread", "signal", "tr
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 pyo3-async-runtimes = { version = "0.27.0", features = ["tokio-runtime"] }
+redis = { version = "0.27", features = ["tokio-comp"] }
+lapin = { version = "2.5" }
+uuid = { version = "1", features = ["v4"] }
+async-trait = "0.1.89"
 
 [profile.release]
 lto = "fat"

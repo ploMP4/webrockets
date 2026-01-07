@@ -6,6 +6,7 @@ use pyo3::{
 use pyo3_async_runtimes::TaskLocals;
 use std::sync::{Arc, OnceLock};
 
+mod broker;
 mod callback;
 mod channel_store;
 mod connection;
@@ -17,7 +18,8 @@ static TASK_LOCALS: OnceLock<TaskLocals> = OnceLock::new();
 static ASYNC_NOOP: OnceLock<Py<PyAny>> = OnceLock::new();
 
 fn start_python_event_loop(py: Python<'_>) -> PyResult<()> {
-    let runtime_builder = tokio::runtime::Builder::new_multi_thread();
+    let mut runtime_builder = tokio::runtime::Builder::new_multi_thread();
+    runtime_builder.enable_all();
     pyo3_async_runtimes::tokio::init(runtime_builder);
 
     let asyncio = py.import("asyncio")?;
@@ -74,6 +76,12 @@ impl TryFrom<&Bound<'_, PyAny>> for Message {
 mod pywsrs {
     use pyo3::prelude::*;
 
+    #[pymodule_export]
+    use super::broker::abroadcast;
+    #[pymodule_export]
+    use super::broker::broadcast;
+    #[pymodule_export]
+    use super::broker::setup_broadcast;
     #[pymodule_export]
     use super::connection::BaseConnection;
     #[pymodule_export]

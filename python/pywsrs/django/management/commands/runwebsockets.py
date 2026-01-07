@@ -13,5 +13,6 @@ class Command(BaseCommand):
 
         host = getattr(settings, "WEBSOCKET_HOST", "0.0.0.0")
         port = getattr(settings, "WEBSOCKET_PORT", 46290)
+        broker = getattr(settings, "WEBSOCKET_BROKER", None)
 
-        pywsrs.Websocket.start(host, port)
+        pywsrs.Websocket.start(host, port, broker=broker)
