@@ -7,7 +7,6 @@ import time
 import pytest
 import websockets
 from pywsrs import Websocket, abroadcast, broadcast, setup_broadcast
-from testcontainers.rabbitmq import RabbitMqContainer
 from testcontainers.redis import RedisContainer
 
 broker_test_state = {
@@ -32,12 +31,6 @@ setup_all_routes()
 def redis_container():
     with RedisContainer("redis:7-alpine") as redis:
         yield redis
-
-
-@pytest.fixture(scope="module")
-def rabbitmq_container():
-    with RabbitMqContainer("rabbitmq:3-management-alpine") as rabbitmq:
-        yield rabbitmq
 
 
 @pytest.fixture
