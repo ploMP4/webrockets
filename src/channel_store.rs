@@ -24,10 +24,7 @@ impl ChannelStore {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
 
         self.data.insert(id, Arc::clone(&tx));
-        self.grouped
-            .entry(group.to_string())
-            .or_default()
-            .push(tx);
+        self.grouped.entry(group.to_string()).or_default().push(tx);
 
         id
     }
