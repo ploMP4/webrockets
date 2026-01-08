@@ -1,8 +1,7 @@
+from collections.abc import Callable, Coroutine
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
-    Coroutine,
     Generic,
     Literal,
     TypedDict,
@@ -98,12 +97,8 @@ class SocketView:
     ) -> ReceiveDecorator[T_Schema]: ...
     def disconnect(
         self,
-        func: Callable[
-            [Connection, int | None, str | None], None | Coroutine[Any, Any, None]
-        ],
-    ) -> Callable[
-        [Connection, int | None, str | None], None | Coroutine[Any, Any, None]
-    ]: ...
+        func: Callable[[Connection, int | None, str | None], None | Coroutine[Any, Any, None]],
+    ) -> Callable[[Connection, int | None, str | None], None | Coroutine[Any, Any, None]]: ...
 
 class WebsocketServer:
     def __call__(

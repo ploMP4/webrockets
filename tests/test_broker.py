@@ -6,11 +6,9 @@ import time
 
 import pytest
 import websockets
-from testcontainers.redis import RedisContainer
+from pywsrs import Websocket, abroadcast, broadcast, setup_broadcast
 from testcontainers.rabbitmq import RabbitMqContainer
-
-from pywsrs import Websocket, setup_broadcast, broadcast, abroadcast
-
+from testcontainers.redis import RedisContainer
 
 broker_test_state = {
     "received_messages": [],
@@ -83,9 +81,7 @@ def redis_ws_server(redis_container):
 class TestRedisBroker:
     @pytest.mark.asyncio
     async def test_redis_broadcaster_send(self, redis_ws_server, cleanup_broker_state):
-        async with websockets.connect(
-            f"{redis_ws_server['ws_url']}/ws/redis-test/"
-        ) as ws:
+        async with websockets.connect(f"{redis_ws_server['ws_url']}/ws/redis-test/") as ws:
             await asyncio.sleep(0.2)
 
             broadcast(
@@ -101,9 +97,7 @@ class TestRedisBroker:
 
     @pytest.mark.asyncio
     async def test_redis_broadcaster_asend(self, redis_ws_server, cleanup_broker_state):
-        async with websockets.connect(
-            f"{redis_ws_server['ws_url']}/ws/redis-test/"
-        ) as ws:
+        async with websockets.connect(f"{redis_ws_server['ws_url']}/ws/redis-test/") as ws:
             await asyncio.sleep(0.2)
 
             await abroadcast(
@@ -118,12 +112,8 @@ class TestRedisBroker:
                 pytest.fail("Did not receive async broadcast message within timeout")
 
     @pytest.mark.asyncio
-    async def test_redis_multiple_broadcasts(
-        self, redis_ws_server, cleanup_broker_state
-    ):
-        async with websockets.connect(
-            f"{redis_ws_server['ws_url']}/ws/redis-test/"
-        ) as ws:
+    async def test_redis_multiple_broadcasts(self, redis_ws_server, cleanup_broker_state):
+        async with websockets.connect(f"{redis_ws_server['ws_url']}/ws/redis-test/") as ws:
             await asyncio.sleep(0.2)
 
             messages = ["first", "second", "third"]
@@ -143,15 +133,9 @@ class TestRedisBroker:
                 assert any(msg in r for r in received)
 
     @pytest.mark.asyncio
-    async def test_redis_broadcast_to_multiple_clients(
-        self, redis_ws_server, cleanup_broker_state
-    ):
-        async with websockets.connect(
-            f"{redis_ws_server['ws_url']}/ws/redis-test/"
-        ) as ws1:
-            async with websockets.connect(
-                f"{redis_ws_server['ws_url']}/ws/redis-test/"
-            ) as ws2:
+    async def test_redis_broadcast_to_multiple_clients(self, redis_ws_server, cleanup_broker_state):
+        async with websockets.connect(f"{redis_ws_server['ws_url']}/ws/redis-test/") as ws1:
+            async with websockets.connect(f"{redis_ws_server['ws_url']}/ws/redis-test/") as ws2:
                 await asyncio.sleep(0.2)
 
                 broadcast(groups=["redis-test"], message="broadcast to all")

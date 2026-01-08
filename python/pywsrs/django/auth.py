@@ -2,11 +2,12 @@ from types import SimpleNamespace
 from typing import Any
 from urllib.parse import parse_qs
 
-from django.contrib import auth
 from django.conf import settings
+from django.contrib import auth
 from django.utils.module_loading import import_string
-from pywsrs.auth import AuthenticationFailed, BaseAuthentication
+
 from pywsrs import IncomingConnection
+from pywsrs.auth import AuthenticationFailed, BaseAuthentication
 
 
 class SessionAuthentication(BaseAuthentication):
@@ -27,9 +28,7 @@ class SessionAuthentication(BaseAuthentication):
         return getattr(settings, "SESSION_COOKIE_NAME", "sessionid")
 
     def _get_session_store(self):
-        engine = getattr(
-            settings, "SESSION_ENGINE", "django.contrib.sessions.backends.db"
-        )
+        engine = getattr(settings, "SESSION_ENGINE", "django.contrib.sessions.backends.db")
         return import_string(f"{engine}.SessionStore")
 
     def authenticate(self, conn: IncomingConnection) -> Any | None:
@@ -43,9 +42,7 @@ class SessionAuthentication(BaseAuthentication):
         request = SimpleNamespace(session=session)
         user = auth.get_user(request)
         if not user.is_authenticated:
-            raise AuthenticationFailed(
-                "No authenticated user in session", close_code=4001
-            )
+            raise AuthenticationFailed("No authenticated user in session", close_code=4001)
 
         return user
 
@@ -71,9 +68,7 @@ class CookieTokenAuthentication(BaseAuthentication):
     def authenticate(self, conn: IncomingConnection) -> Any | None:
         token = conn.get_cookie(self.cookie_name)
         if not token:
-            raise AuthenticationFailed(
-                f"No {self.cookie_name} cookie found", close_code=4001
-            )
+            raise AuthenticationFailed(f"No {self.cookie_name} cookie found", close_code=4001)
 
         user = self.validate_token(token)
         return user
@@ -124,15 +119,11 @@ class HeaderTokenAuthentication(BaseAuthentication):
     def authenticate(self, conn: IncomingConnection) -> Any | None:
         auth_header = conn.get_header(self.header_name)
         if not auth_header:
-            raise AuthenticationFailed(
-                f"No {self.header_name} header found", close_code=4001
-            )
+            raise AuthenticationFailed(f"No {self.header_name} header found", close_code=4001)
 
         parts = auth_header.split()
         if len(parts) != 2 or parts[0].lower() != self.keyword.lower():
-            raise AuthenticationFailed(
-                f"Invalid {self.header_name} header format", close_code=4001
-            )
+            raise AuthenticationFailed(f"Invalid {self.header_name} header format", close_code=4001)
 
         token = parts[1]
         user = self.validate_token(token)
@@ -175,9 +166,7 @@ class QueryStringTokenAuthentication(BaseAuthentication):
         tokens = params.get(self.query_param, [])
 
         if not tokens:
-            raise AuthenticationFailed(
-                f"No {self.query_param} in query string", close_code=4001
-            )
+            raise AuthenticationFailed(f"No {self.query_param} in query string", close_code=4001)
 
         token = tokens[0]
         user = self.validate_token(token)

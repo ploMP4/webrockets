@@ -1,17 +1,16 @@
-try:
-    import django
-except ImportError as e:
+import importlib.util
+
+if importlib.util.find_spec("django") is None:
     raise ImportError(
-        "Django is required for pywsrs.django. "
-        'Install with: pip install "pywsrs[django]"'
-    ) from e
+        'Django is required for pywsrs.django. Install with: pip install "pywsrs[django]"'
+    )
 
 from .auth import (
     AuthenticationFailed,
-    SessionAuthentication,
     CookieTokenAuthentication,
     HeaderTokenAuthentication,
     QueryStringTokenAuthentication,
+    SessionAuthentication,
 )
 
 __all__ = [

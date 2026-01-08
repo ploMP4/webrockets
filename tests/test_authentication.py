@@ -1,10 +1,10 @@
 import pytest
 from pywsrs.auth import AuthenticationFailed
 from pywsrs.django.auth import (
-    SessionAuthentication,
     CookieTokenAuthentication,
     HeaderTokenAuthentication,
     QueryStringTokenAuthentication,
+    SessionAuthentication,
 )
 
 
@@ -41,9 +41,7 @@ class TestSessionAuthentication:
         assert result is not None
         assert result.pk == active_user.pk
 
-    def test_inactive_user_rejected_by_default(
-        self, websocket_scope, session_store, inactive_user
-    ):
+    def test_inactive_user_rejected_by_default(self, websocket_scope, session_store, inactive_user):
         session = session_store()
         session["_auth_user_id"] = str(inactive_user.pk)
         session["_auth_user_backend"] = "django.contrib.auth.backends.ModelBackend"
@@ -57,9 +55,7 @@ class TestSessionAuthentication:
 
         assert "No authenticated user in session" in exc_info.value.detail
 
-    def test_custom_session_cookie_name(
-        self, websocket_scope, create_session, active_user
-    ):
+    def test_custom_session_cookie_name(self, websocket_scope, create_session, active_user):
         session = create_session(user=active_user)
         auth = SessionAuthentication(session_cookie_name="my_session")
 
@@ -100,9 +96,7 @@ class TestSessionAuthentication:
 
         assert "No authenticated user in session" in exc_info.value.detail
 
-    def test_session_auth_hash_validation(
-        self, websocket_scope, session_store, active_user
-    ):
+    def test_session_auth_hash_validation(self, websocket_scope, session_store, active_user):
         # Create session with wrong auth hash (simulates password change)
         session = session_store()
         session["_auth_user_id"] = str(active_user.pk)

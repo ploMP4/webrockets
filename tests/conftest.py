@@ -1,7 +1,7 @@
 import django
 import pytest
-from django.contrib.auth import get_user_model
 from django.conf import settings
+from django.contrib.auth import get_user_model
 
 
 def pytest_configure():
@@ -40,9 +40,7 @@ def create_user(user_model):
     """Factory fixture to create users."""
 
     def _create_user(username="testuser", password="testpass123", **kwargs):
-        return user_model.objects.create_user(
-            username=username, password=password, **kwargs
-        )
+        return user_model.objects.create_user(username=username, password=password, **kwargs)
 
     return _create_user
 

@@ -3,11 +3,11 @@ import json
 import os
 import threading
 import time
+
 import pytest
 import websockets
 from pydantic import BaseModel
 from pywsrs import IncomingConnection, Websocket
-
 
 test_state = {
     "connected": [],
@@ -335,7 +335,7 @@ class TestConcurrentConnections:
         num_clients = 10
         clients = []
 
-        for i in range(num_clients):
+        for _ in range(num_clients):
             ws = await websockets.connect(f"{ws_server}/ws/echo/")
             clients.append(ws)
 
@@ -358,9 +358,7 @@ class TestConcurrentConnections:
                     response = await asyncio.wait_for(ws.recv(), timeout=2.0)
                     assert response == f"echo: c{client_id}m{i}"
 
-        await asyncio.gather(
-            *[send_and_receive(f"{ws_server}/ws/echo/", i, 5) for i in range(5)]
-        )
+        await asyncio.gather(*[send_and_receive(f"{ws_server}/ws/echo/", i, 5) for i in range(5)])
 
 
 class TestMessageTypes:
@@ -465,7 +463,7 @@ class TestServerClose:
 
             try:
                 await asyncio.wait_for(ws.recv(), timeout=2.0)
-                assert False, "Expected connection to close"
+                pytest.fail("Expected connection to close")
             except websockets.ConnectionClosedOK as e:
                 assert e.rcvd.code == 1000
                 assert e.rcvd.reason == ""
@@ -477,7 +475,7 @@ class TestServerClose:
 
             try:
                 await asyncio.wait_for(ws.recv(), timeout=2.0)
-                assert False, "Expected connection to close"
+                pytest.fail("Expected connection to close")
             except websockets.ConnectionClosed as e:
                 assert e.rcvd.code == 1001
 
@@ -488,7 +486,7 @@ class TestServerClose:
 
             try:
                 await asyncio.wait_for(ws.recv(), timeout=2.0)
-                assert False, "Expected connection to close"
+                pytest.fail("Expected connection to close")
             except websockets.ConnectionClosed as e:
                 assert e.rcvd.code == 1008
                 assert e.rcvd.reason == "Policy violation"
@@ -508,7 +506,7 @@ class TestServerClose:
 
             try:
                 await asyncio.wait_for(ws.recv(), timeout=2.0)
-                assert False, "Expected connection to close"
+                pytest.fail("Expected connection to close")
             except websockets.ConnectionClosedOK as e:
                 assert e.rcvd.code == 1000
                 assert e.rcvd.reason == "Goodbye"
