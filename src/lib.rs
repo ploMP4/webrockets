@@ -35,7 +35,7 @@ fn start_python_event_loop(py: Python<'_>) -> PyResult<()> {
         };
         let locals = pyo3_async_runtimes::TaskLocals::new(ev.clone()).copy_context(py)?;
         let _ = TASK_LOCALS.set(locals);
-        ev.unbind().into()
+        ev.unbind()
     };
     std::thread::spawn(move || {
         Python::attach(|py| {

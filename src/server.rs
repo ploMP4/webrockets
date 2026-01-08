@@ -214,7 +214,7 @@ impl WebsocketServer {
                     }
                 }
                 Message::Binary(data) => {
-                    let frame = Frame::binary(fastwebsockets::Payload::Borrowed(&data));
+                    let frame = Frame::binary(fastwebsockets::Payload::Borrowed(data));
                     if writer.write_frame(frame).await.is_err() {
                         break;
                     }
@@ -430,7 +430,7 @@ impl WebsocketServer {
             SocketView::new(
                 path.clone(),
                 group,
-                authentication_classes.unwrap_or(Vec::new()),
+                authentication_classes.unwrap_or_default(),
                 discriminator,
             ),
         )?;

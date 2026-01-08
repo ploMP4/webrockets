@@ -22,8 +22,8 @@ pub(super) trait Broker {
 
 pub(super) fn get_broker(config: &config::BrokerConfig) -> Box<dyn Broker + Send + Sync> {
     match config {
-        config::BrokerConfig::Redis(cfg) => Box::new(redis::Redis::new(&cfg)),
-        config::BrokerConfig::Amqp(cfg) => Box::new(amqp::Amqp::new(&cfg)),
+        config::BrokerConfig::Redis(cfg) => Box::new(redis::Redis::new(cfg)),
+        config::BrokerConfig::Amqp(cfg) => Box::new(amqp::Amqp::new(cfg)),
     }
 }
 

@@ -26,7 +26,7 @@ impl ChannelStore {
         self.data.insert(id, Arc::clone(&tx));
         self.grouped
             .entry(group.to_string())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(tx);
 
         id

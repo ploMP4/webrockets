@@ -32,7 +32,7 @@ impl Callback {
             let locals = TASK_LOCALS.get().ok_or_else(|| {
                 pyo3::exceptions::PyRuntimeError::new_err("no running event loop")
             })?;
-            tokio::spawn(pyo3_async_runtimes::into_future_with_locals(&locals, coro)?);
+            tokio::spawn(pyo3_async_runtimes::into_future_with_locals(locals, coro)?);
         } else {
             self.func.call1(py, args)?;
         }
@@ -58,7 +58,7 @@ impl Callback {
             let locals = TASK_LOCALS.get().ok_or_else(|| {
                 pyo3::exceptions::PyRuntimeError::new_err("no running event loop")
             })?;
-            tokio::spawn(pyo3_async_runtimes::into_future_with_locals(&locals, coro)?);
+            tokio::spawn(pyo3_async_runtimes::into_future_with_locals(locals, coro)?);
         } else {
             self.func.call1(py, (conn, validated))?;
         }
