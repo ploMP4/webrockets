@@ -5,7 +5,7 @@ use axum::http::{HeaderMap, Uri};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use tokio::sync::mpsc;
 
-use crate::{Message, ASYNC_NOOP};
+use crate::{channel_store::ChannelStore, Message, ASYNC_NOOP};
 
 #[pyclass(subclass, get_all)]
 pub(crate) struct BaseConnection {
@@ -121,11 +121,15 @@ impl IncomingConnection {
 #[pyclass(extends=BaseConnection)]
 pub(crate) struct Connection {
     pub(crate) sender: Option<Arc<mpsc::Sender<Arc<Message>>>>,
+    pub(crate) channels: Option<Arc<ChannelStore>>,
 }
 
 impl Connection {
     pub(crate) fn new() -> Self {
-        Self { sender: None }
+        Self {
+            sender: None,
+            channels: None,
+        }
     }
 }
 
@@ -230,6 +234,35 @@ impl Connection {
             }
             Err(mpsc::error::TrySendError::Closed(_)) => noop_coroutine(py),
         }
+    }
+
+    fn broadcast(&self, py: Python<'_>, groups: Vec<String>, msg: Py<PyAny>) -> PyResult<()> {
+        let bound = msg.bind(py);
+        let message = Arc::new(Message::try_from(bound)?);
+
+        self.channels
+            .clone()
+            .ok_or_else(|| PyRuntimeError::new_err("ChannelStore is not set"))?
+            .broadcast(&groups, message);
+
+        Ok(())
+    }
+
+    fn abroadcast<'py>(
+        &self,
+        py: Python<'py>,
+        groups: Vec<String>,
+        msg: Py<PyAny>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let bound = msg.bind(py);
+        let message = Arc::new(Message::try_from(bound)?);
+
+        self.channels
+            .clone()
+            .ok_or_else(|| PyRuntimeError::new_err("ChannelStore is not set"))?
+            .broadcast(&groups, message);
+
+        noop_coroutine(py)
     }
 }
 

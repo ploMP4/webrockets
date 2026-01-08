@@ -345,6 +345,7 @@ impl WebsocketServer {
 
         let (receive_cb, disconnect_cb) = Python::attach(|py| {
             conn.borrow_mut(py).sender = Some(tx_arc);
+            conn.borrow_mut(py).channels = Some(Arc::clone(&state.channels));
 
             let view = handler.borrow(py);
 
@@ -445,13 +446,5 @@ impl WebsocketServer {
             })
         });
         Ok(instance)
-    }
-
-    fn broadcast_text(&self, py: Python<'_>, groups: Vec<String>, msg: String) {
-        py.detach(|| {
-            self.state
-                .channels
-                .broadcast(&groups, Arc::new(Message::Text(msg.into())));
-        });
     }
 }
