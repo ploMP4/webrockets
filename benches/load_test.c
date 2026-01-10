@@ -79,7 +79,7 @@ void init_big_message(unsigned int size) {
 }
 
 char request_deflate[] =
-    "GET / HTTP/1.1\r\n"
+    "GET /chat HTTP/1.1\r\n"
     "Upgrade: websocket\r\n"
     "Connection: Upgrade\r\n"
     "Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==\r\n"

@@ -12,26 +12,26 @@ function load_test(conn, port, bytes) {
 }
 
 const targets = [
-    // https://github.com/denoland/fastwebsockets
     {
         port: 6969,
-        name: "django_wsrs",
-        // server: "target/release/examples/echo_server",
+        name: "pywsrs",
     },
-    // // https://github.com/uNetworking/uWebSockets
-    // { port: 9001, name: "uWebSockets", server: "../uWebSockets/EchoServer" },
-    // // https://github.com/snapview/tokio-tungstenite
     {
         port: 8000,
         name: "django-channels",
-        // server: "../tokio-tungstenite/target/release/examples/echo-server",
     },
-    // // https://github.com/websockets-rs/rust-websocket
-    // {
-    //     port: 9002,
-    //     name: "rust-websocket",
-    //     server: "../rust-websocket/target/release/examples/async-autobahn-server",
-    // },
+    {
+        port: 1234,
+        name: "fastapi",
+    },
+    {
+        port: 1235,
+        name: "django-bolt",
+    },
+    {
+        port: 4200,
+        name: "python-websockets",
+    },
 ];
 
 const cases = [
@@ -54,6 +54,10 @@ const cases = [
     {
         conn: 500,
         bytes: 16 * 1024,
+    },
+    {
+        conn: 10000,
+        bytes: 1024,
     },
 ];
 
