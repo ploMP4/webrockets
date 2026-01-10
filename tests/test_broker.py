@@ -1,30 +1,18 @@
 import asyncio
 import json
-import os
 import threading
 import time
 
 import pytest
 import websockets
-from pywsrs import Websocket, abroadcast, broadcast, setup_broadcast
+from pywsrs import (
+    BrokerConfig,
+    WebsocketServer,
+    abroadcast,
+    broadcast,
+    setup_broadcast,
+)
 from testcontainers.redis import RedisContainer
-
-broker_test_state = {
-    "received_messages": [],
-}
-
-
-def setup_all_routes():
-    redis_view = Websocket("ws/redis-test/", "redis-test")
-
-    @redis_view.receive
-    def on_redis_receive(conn, data):
-        broker_test_state["received_messages"].append(("redis", data))
-        conn.send(f"redis-ack: {data}")
-
-
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tests.settings")
-setup_all_routes()
 
 
 @pytest.fixture(scope="module")
@@ -33,31 +21,25 @@ def redis_container():
         yield redis
 
 
-@pytest.fixture
-def cleanup_broker_state():
-    broker_test_state["received_messages"] = []
-    yield
-
-
 @pytest.fixture(scope="module")
 def redis_ws_server(redis_container):
     redis_url = f"redis://{redis_container.get_container_host_ip()}:{redis_container.get_exposed_port(6379)}"
 
-    broker_config = {
+    broker_config: BrokerConfig = {
         "type": "redis",
         "url": redis_url,
         "channel": "ws_test_broadcast",
     }
 
     setup_broadcast(broker_config)
+    server = WebsocketServer(host="127.0.0.1", port=46391, broker=broker_config)
+    redis_view = server.create_route("ws/redis-test/", "redis-test")
 
-    server_thread = threading.Thread(
-        target=lambda: Websocket.start(
-            host="127.0.0.1",
-            port=46391,
-            broker=broker_config,
-        )
-    )
+    @redis_view.receive
+    def on_redis_receive(conn, data):
+        conn.send(f"redis-ack: {data}")
+
+    server_thread = threading.Thread(target=lambda: server.start())
     server_thread.start()
     time.sleep(0.5)
 
@@ -67,13 +49,13 @@ def redis_ws_server(redis_container):
         "channel": "ws_test_broadcast",
     }
 
-    Websocket.stop()
+    server.stop()
     server_thread.join(timeout=5)
 
 
 class TestRedisBroker:
     @pytest.mark.asyncio
-    async def test_redis_broadcaster_send(self, redis_ws_server, cleanup_broker_state):
+    async def test_redis_broadcaster_send(self, redis_ws_server):
         async with websockets.connect(f"{redis_ws_server['ws_url']}/ws/redis-test/") as ws:
             await asyncio.sleep(0.2)
 
@@ -89,7 +71,7 @@ class TestRedisBroker:
                 pytest.fail("Did not receive broadcast message within timeout")
 
     @pytest.mark.asyncio
-    async def test_redis_broadcaster_asend(self, redis_ws_server, cleanup_broker_state):
+    async def test_redis_broadcaster_asend(self, redis_ws_server):
         async with websockets.connect(f"{redis_ws_server['ws_url']}/ws/redis-test/") as ws:
             await asyncio.sleep(0.2)
 
@@ -105,7 +87,7 @@ class TestRedisBroker:
                 pytest.fail("Did not receive async broadcast message within timeout")
 
     @pytest.mark.asyncio
-    async def test_redis_multiple_broadcasts(self, redis_ws_server, cleanup_broker_state):
+    async def test_redis_multiple_broadcasts(self, redis_ws_server):
         async with websockets.connect(f"{redis_ws_server['ws_url']}/ws/redis-test/") as ws:
             await asyncio.sleep(0.2)
 
@@ -126,7 +108,7 @@ class TestRedisBroker:
                 assert any(msg in r for r in received)
 
     @pytest.mark.asyncio
-    async def test_redis_broadcast_to_multiple_clients(self, redis_ws_server, cleanup_broker_state):
+    async def test_redis_broadcast_to_multiple_clients(self, redis_ws_server):
         async with websockets.connect(f"{redis_ws_server['ws_url']}/ws/redis-test/") as ws1:
             async with websockets.connect(f"{redis_ws_server['ws_url']}/ws/redis-test/") as ws2:
                 await asyncio.sleep(0.2)

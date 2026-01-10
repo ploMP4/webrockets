@@ -1,13 +1,12 @@
 import asyncio
 import json
-import os
 import threading
 import time
 
 import pytest
 import websockets
 from pydantic import BaseModel
-from pywsrs import IncomingConnection, Match, Websocket
+from pywsrs import IncomingConnection, Match, WebsocketServer
 
 test_state = {
     "connected": [],
@@ -52,8 +51,8 @@ class PongMessage(BaseModel):
     timestamp: int
 
 
-def setup_routes():
-    echo_view = Websocket("ws/echo/", "echo")
+def setup_routes(server: WebsocketServer):
+    echo_view = server.create_route("ws/echo/", "echo")
 
     @echo_view.connect("before")
     def echo_connect(conn: IncomingConnection):
@@ -68,7 +67,7 @@ def setup_routes():
     def echo_disconnect(conn, code=None, reason=None):
         test_state["disconnected"].append(("echo", code, reason))
 
-    chat_view = Websocket("ws/chat/", "chat")
+    chat_view = server.create_route("ws/chat/", "chat")
 
     @chat_view.connect("before")
     def chat_connect(conn):
@@ -83,7 +82,7 @@ def setup_routes():
     def chat_disconnect(conn, code=None, reason=None):
         test_state["disconnected"].append(("chat", code, reason))
 
-    binary_view = Websocket("ws/binary/", "binary")
+    binary_view = server.create_route("ws/binary/", "binary")
 
     @binary_view.connect("before")
     def binary_connect(conn):
@@ -98,7 +97,7 @@ def setup_routes():
     def binary_disconnect(conn, code=None, reason=None):
         test_state["disconnected"].append(("binary", code, reason))
 
-    close_view = Websocket("ws/close/", "close")
+    close_view = server.create_route("ws/close/", "close")
 
     @close_view.connect("before")
     def close_connect(conn):
@@ -121,7 +120,7 @@ def setup_routes():
     def close_disconnect(conn, code=None, reason=None):
         test_state["disconnected"].append(("close", code, reason))
 
-    async_view = Websocket("ws/async/", "async")
+    async_view = server.create_route("ws/async/", "async")
 
     @async_view.connect("before")
     async def async_connect(conn):
@@ -139,7 +138,7 @@ def setup_routes():
         test_state["disconnected"].append(("async", code, reason))
 
     # Pattern matching routes
-    pattern_view = Websocket("ws/pattern/", "pattern")
+    pattern_view = server.create_route("ws/pattern/", "pattern")
 
     @pattern_view.receive(match=Match("type", "chat"), schema=ChatMessage)
     def on_chat(conn, data: ChatMessage):
@@ -172,7 +171,7 @@ def setup_routes():
         conn.send(json.dumps({"status": "unknown", "raw": str(data)[:100]}))
 
     # Custom discriminator test (using "action" key instead of "type")
-    custom_view = Websocket("ws/custom-disc/", "custom-disc")
+    custom_view = server.create_route("ws/custom-disc/", "custom-disc")
 
     @custom_view.receive(match=Match("action", "ping"), schema=PingMessage)
     def on_ping(conn, data: PingMessage):
@@ -185,7 +184,7 @@ def setup_routes():
         conn.send(json.dumps({"status": "pong_received"}))
 
     # Raw match without schema
-    raw_view = Websocket("ws/raw-match/", "raw-match")
+    raw_view = server.create_route("ws/raw-match/", "raw-match")
 
     @raw_view.receive(match=Match("type", "echo"))
     def on_echo_raw(conn, data: str):
@@ -198,23 +197,16 @@ def setup_routes():
 
 @pytest.fixture(scope="module")
 def ws_server():
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "tests.settings")
+    server = WebsocketServer()
+    setup_routes(server)
 
-    from django.conf import settings
-
-    if not hasattr(settings, "WEBSOCKET_PORT"):
-        settings.WEBSOCKET_HOST = "127.0.0.1"
-        settings.WEBSOCKET_PORT = "46290"
-
-    setup_routes()
-
-    server_thread = threading.Thread(target=Websocket.start)
+    server_thread = threading.Thread(target=server.start)
     server_thread.start()
     time.sleep(0.5)  # Wait for server to start
 
     yield "ws://127.0.0.1:46290"
 
-    Websocket.stop()
+    server.stop()
     server_thread.join(timeout=5)
     if server_thread.is_alive():
         raise RuntimeError("WebSocket server did not shut down cleanly")

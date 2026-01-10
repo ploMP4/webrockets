@@ -105,9 +105,10 @@ class Match:
         remove_key: bool = False,
     ) -> None: ...
 
-class SocketView:
+class WebsocketRoute:
     path: str
     group: str
+    authentication_classes: list[BaseAuthentication] | None = None
 
     @overload
     def connect(
@@ -143,22 +144,20 @@ class SocketView:
     ) -> Callable[[Connection, int | None, str | None], None | Coroutine[Any, Any, None]]: ...
 
 class WebsocketServer:
-    def __call__(
-        self,
-        path: str,
-        group: str,
-        authentication_classes: list[BaseAuthentication] | None = None,
-        discriminator: str = "type",
-    ) -> SocketView: ...
-    def start(
+    def __init__(
         self,
         host: str = "0.0.0.0",
         port: int = 46290,
         broker: BrokerConfig | None = None,
     ) -> None: ...
+    def start(self) -> None: ...
     def stop(self) -> None: ...
-
-Websocket: WebsocketServer
+    def create_route(
+        self,
+        path: str,
+        group: str,
+        authentication_classes: list[BaseAuthentication] | None = None,
+    ) -> WebsocketRoute: ...
 
 # Broker functions for external broadcasting (e.g., from Django views, Celery tasks)
 def setup_broadcast(config: BrokerConfig) -> None:

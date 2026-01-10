@@ -146,11 +146,12 @@ impl Match {
 }
 
 #[pyclass]
-pub(crate) struct SocketView {
+pub(crate) struct WebsocketRoute {
     #[pyo3(get)]
     path: String,
     #[pyo3(get)]
     group: String,
+    #[pyo3(get)]
     pub(crate) authentication_classes: Vec<Py<PyAny>>,
     pub(crate) connect_before_callback: Option<Callback>,
     pub(crate) connect_after_callback: Option<Callback>,
@@ -165,18 +166,18 @@ pub(crate) struct SocketView {
 
 #[pyclass]
 pub(crate) struct ConnectDecorator {
-    view: Py<SocketView>,
+    view: Py<WebsocketRoute>,
     before: bool,
 }
 
 #[pyclass]
 pub(crate) struct ReceiveDecorator {
-    view: Py<SocketView>,
+    view: Py<WebsocketRoute>,
     match_spec: Option<Match>,
     schema: Option<Py<PyAny>>,
 }
 
-impl SocketView {
+impl WebsocketRoute {
     pub(crate) fn new(path: String, group: String, authentication_classes: Vec<Py<PyAny>>) -> Self {
         Self {
             path,
@@ -206,7 +207,7 @@ impl SocketView {
 }
 
 #[pymethods]
-impl SocketView {
+impl WebsocketRoute {
     fn _is_async(&self, py: Python<'_>, func: Py<PyFunction>) -> bool {
         py.import("inspect")
             .expect("unable to import inspect module")

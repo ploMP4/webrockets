@@ -93,16 +93,15 @@ mod pywsrs {
     #[pymodule_export]
     use super::socket_view::ConnectDecorator;
     #[pymodule_export]
+    use super::socket_view::Match;
+    #[pymodule_export]
     use super::socket_view::ReceiveDecorator;
     #[pymodule_export]
-    use super::socket_view::SocketView;
-    #[pymodule_export]
-    use super::socket_view::Match;
+    use super::socket_view::WebsocketRoute;
 
     #[pymodule_init]
-    fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    fn init(_: &Bound<'_, PyModule>) -> PyResult<()> {
         pyo3_log::init();
-        m.add("Websocket", WebsocketServer::new())?;
         Ok(())
     }
 }

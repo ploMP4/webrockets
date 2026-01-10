@@ -1,5 +1,5 @@
 import pytest
-from pywsrs import Connection, Match, Websocket
+from pywsrs import Connection, Match
 
 
 class TestMatchCreation:
@@ -114,8 +114,8 @@ class TestMatchValidation:
 class TestReceiveWithMatch:
     """Test receive decorator with Match objects."""
 
-    def test_receive_with_single_match(self):
-        view = Websocket("ws/test/", "test")
+    def test_receive_with_single_match(self, ws_server):
+        view = ws_server.create_route("ws/test/", "test")
 
         @view.receive(match=Match("type", "message"))
         def on_message(conn, data):
@@ -123,8 +123,8 @@ class TestReceiveWithMatch:
 
         assert callable(on_message)
 
-    def test_receive_with_multiple_values_match(self):
-        view = Websocket("ws/test2/", "test2")
+    def test_receive_with_multiple_values_match(self, ws_server):
+        view = ws_server.create_route("ws/test2/", "test2")
 
         @view.receive(match=Match("type", ["message", "notification"]))
         def on_message(conn, data):
@@ -132,8 +132,8 @@ class TestReceiveWithMatch:
 
         assert callable(on_message)
 
-    def test_receive_with_multiple_keys_match(self):
-        view = Websocket("ws/test3/", "test3")
+    def test_receive_with_multiple_keys_match(self, ws_server):
+        view = ws_server.create_route("ws/test3/", "test3")
 
         @view.receive(match=Match(["type", "action"], "message"))
         def on_message(conn, data):
@@ -141,8 +141,8 @@ class TestReceiveWithMatch:
 
         assert callable(on_message)
 
-    def test_receive_with_wildcard_match(self):
-        view = Websocket("ws/test4/", "test4")
+    def test_receive_with_wildcard_match(self, ws_server):
+        view = ws_server.create_route("ws/test4/", "test4")
 
         @view.receive(match=Match("type", "*"))
         def on_any_type(conn, data):
@@ -150,8 +150,8 @@ class TestReceiveWithMatch:
 
         assert callable(on_any_type)
 
-    def test_receive_with_integer_match(self):
-        view = Websocket("ws/test5/", "test5")
+    def test_receive_with_integer_match(self, ws_server):
+        view = ws_server.create_route("ws/test5/", "test5")
 
         @view.receive(match=Match("code", 1))
         def on_code_1(conn, data):
@@ -159,8 +159,8 @@ class TestReceiveWithMatch:
 
         assert callable(on_code_1)
 
-    def test_receive_preserves_function(self):
-        view = Websocket("ws/test6/", "test6")
+    def test_receive_preserves_function(self, ws_server):
+        view = ws_server.create_route("ws/test6/", "test6")
 
         @view.receive(match=Match("type", "echo"))
         def echo_handler(conn, data):
@@ -174,8 +174,8 @@ class TestReceiveWithMatch:
 class TestReceiveMatchDuplicateRegistration:
     """Test that duplicate match registrations are rejected."""
 
-    def test_duplicate_exact_match_raises_error(self):
-        view = Websocket("ws/dup1/", "dup1")
+    def test_duplicate_exact_match_raises_error(self, ws_server):
+        view = ws_server.create_route("ws/dup1/", "dup1")
 
         @view.receive(match=Match("type", "message"))
         def handler1(conn, data):
@@ -187,8 +187,8 @@ class TestReceiveMatchDuplicateRegistration:
             def handler2(conn, data):
                 pass
 
-    def test_duplicate_in_multiple_values_raises_error(self):
-        view = Websocket("ws/dup2/", "dup2")
+    def test_duplicate_in_multiple_values_raises_error(self, ws_server):
+        view = ws_server.create_route("ws/dup2/", "dup2")
 
         @view.receive(match=Match("type", "message"))
         def handler1(conn, data):
@@ -200,8 +200,8 @@ class TestReceiveMatchDuplicateRegistration:
             def handler2(conn, data):
                 pass
 
-    def test_duplicate_in_multiple_keys_raises_error(self):
-        view = Websocket("ws/dup3/", "dup3")
+    def test_duplicate_in_multiple_keys_raises_error(self, ws_server):
+        view = ws_server.create_route("ws/dup3/", "dup3")
 
         @view.receive(match=Match("type", "message"))
         def handler1(conn, data):
@@ -213,8 +213,8 @@ class TestReceiveMatchDuplicateRegistration:
             def handler2(conn, data):
                 pass
 
-    def test_different_values_same_key_allowed(self):
-        view = Websocket("ws/nodup1/", "nodup1")
+    def test_different_values_same_key_allowed(self, ws_server):
+        view = ws_server.create_route("ws/nodup1/", "nodup1")
 
         @view.receive(match=Match("type", "message"))
         def handler1(conn, data):
@@ -228,8 +228,8 @@ class TestReceiveMatchDuplicateRegistration:
         assert callable(handler1)
         assert callable(handler2)
 
-    def test_different_keys_same_value_allowed(self):
-        view = Websocket("ws/nodup2/", "nodup2")
+    def test_different_keys_same_value_allowed(self, ws_server):
+        view = ws_server.create_route("ws/nodup2/", "nodup2")
 
         @view.receive(match=Match("type", "message"))
         def handler1(conn, data):
@@ -247,8 +247,8 @@ class TestReceiveMatchDuplicateRegistration:
 class TestReceiveWithGenericFallback:
     """Test receive with both match handlers and generic fallback."""
 
-    def test_match_and_generic_handlers(self):
-        view = Websocket("ws/fallback/", "fallback")
+    def test_match_and_generic_handlers(self, ws_server):
+        view = ws_server.create_route("ws/fallback/", "fallback")
 
         @view.receive(match=Match("type", "specific"))
         def specific_handler(conn, data):
@@ -261,8 +261,8 @@ class TestReceiveWithGenericFallback:
         assert callable(specific_handler)
         assert callable(generic_handler)
 
-    def test_duplicate_generic_raises_error(self):
-        view = Websocket("ws/dupgen/", "dupgen")
+    def test_duplicate_generic_raises_error(self, ws_server):
+        view = ws_server.create_route("ws/dupgen/", "dupgen")
 
         @view.receive
         def handler1(conn, data):

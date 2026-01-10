@@ -2,6 +2,7 @@ import django
 import pytest
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from pywsrs import WebsocketServer
 
 
 def pytest_configure():
@@ -110,3 +111,8 @@ def websocket_scope():
         )
 
     return _create_scope
+
+
+@pytest.fixture
+def ws_server():
+    yield WebsocketServer()

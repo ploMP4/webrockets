@@ -1,20 +1,21 @@
-from pywsrs import Connection, Websocket
+import pytest
+from pywsrs import Connection
 from pywsrs.auth import BaseAuthentication
 
 
 class TestSocketViewCreation:
-    def test_create_view_basic(self):
-        view = Websocket("ws/test/", "test_group")
+    def test_create_view_basic(self, ws_server):
+        view = ws_server.create_route("ws/test/", "test_group")
 
         assert view.path == "ws/test/"
         assert view.group == "test_group"
 
-    def test_create_view_with_auth_classes(self):
+    def test_create_view_with_auth_classes(self, ws_server):
         class MockAuth(BaseAuthentication):
             def authenticate(self, conn):
                 return None
 
-        view = Websocket(
+        view = ws_server.create_route(
             "ws/secure/",
             "secure_group",
             authentication_classes=[MockAuth()],
@@ -23,9 +24,9 @@ class TestSocketViewCreation:
         assert view.path == "ws/secure/"
         assert view.group == "secure_group"
 
-    def test_create_multiple_views(self):
-        view1 = Websocket("ws/chat/", "chat")
-        view2 = Websocket("ws/notifications/", "notifications")
+    def test_create_multiple_views(self, ws_server):
+        view1 = ws_server.create_route("ws/chat/", "chat")
+        view2 = ws_server.create_route("ws/notifications/", "notifications")
 
         assert view1.path == "ws/chat/"
         assert view2.path == "ws/notifications/"
@@ -34,8 +35,8 @@ class TestSocketViewCreation:
 
 
 class TestConnectDecorator:
-    def test_connect_before_decorator_registers_callback(self):
-        view = Websocket("ws/connect_test/", "connect_group")
+    def test_connect_before_decorator_registers_callback(self, ws_server):
+        view = ws_server.create_route("ws/connect_test/", "connect_group")
         callback_called = []
 
         @view.connect("before")
@@ -44,8 +45,8 @@ class TestConnectDecorator:
 
         assert callable(on_connect)
 
-    def test_connect_after_decorator_registers_callback(self):
-        view = Websocket("ws/connect_after_test/", "connect_after_group")
+    def test_connect_after_decorator_registers_callback(self, ws_server):
+        view = ws_server.create_route("ws/connect_after_test/", "connect_after_group")
         callback_called = []
 
         @view.connect("after")
@@ -54,8 +55,8 @@ class TestConnectDecorator:
 
         assert callable(on_connect)
 
-    def test_connect_decorator_preserves_function(self):
-        view = Websocket("ws/connect_preserve/", "connect_preserve")
+    def test_connect_decorator_preserves_function(self, ws_server):
+        view = ws_server.create_route("ws/connect_preserve/", "connect_preserve")
 
         @view.connect("before")
         def my_connect_handler(conn):
@@ -65,18 +66,16 @@ class TestConnectDecorator:
         result = my_connect_handler(conn)
         assert result == "connected"
 
-    def test_connect_invalid_argument_raises_error(self):
-        import pytest
-
-        view = Websocket("ws/connect_invalid/", "connect_invalid")
+    def test_connect_invalid_argument_raises_error(self, ws_server):
+        view = ws_server.create_route("ws/connect_invalid/", "connect_invalid")
 
         with pytest.raises(ValueError, match="'before' or 'after'"):
             view.connect("invalid")
 
 
 class TestReceiveDecorator:
-    def test_receive_decorator_registers_callback(self):
-        view = Websocket("ws/receive_test/", "receive_group")
+    def test_receive_decorator_registers_callback(self, ws_server):
+        view = ws_server.create_route("ws/receive_test/", "receive_group")
 
         @view.receive
         def on_receive(conn, data):
@@ -84,8 +83,8 @@ class TestReceiveDecorator:
 
         assert callable(on_receive)
 
-    def test_receive_decorator_preserves_function(self):
-        view = Websocket("ws/receive_preserve/", "receive_preserve")
+    def test_receive_decorator_preserves_function(self, ws_server):
+        view = ws_server.create_route("ws/receive_preserve/", "receive_preserve")
 
         @view.receive
         def my_receive_handler(conn, data):
@@ -97,8 +96,8 @@ class TestReceiveDecorator:
 
 
 class TestDisconnectDecorator:
-    def test_disconnect_decorator_registers_callback(self):
-        view = Websocket("ws/disconnect_test/", "disconnect_group")
+    def test_disconnect_decorator_registers_callback(self, ws_server):
+        view = ws_server.create_route("ws/disconnect_test/", "disconnect_group")
 
         @view.disconnect
         def on_disconnect(conn, code=None, reason=None):
@@ -106,8 +105,8 @@ class TestDisconnectDecorator:
 
         assert callable(on_disconnect)
 
-    def test_disconnect_decorator_preserves_function(self):
-        view = Websocket("ws/disconnect_preserve/", "disconnect_preserve")
+    def test_disconnect_decorator_preserves_function(self, ws_server):
+        view = ws_server.create_route("ws/disconnect_preserve/", "disconnect_preserve")
 
         @view.disconnect
         def my_disconnect_handler(conn, code=None, reason=None):
@@ -119,8 +118,8 @@ class TestDisconnectDecorator:
 
 
 class TestFullViewSetup:
-    def test_view_with_all_callbacks(self):
-        view = Websocket("ws/full/", "full_group")
+    def test_view_with_all_callbacks(self, ws_server):
+        view = ws_server.create_route("ws/full/", "full_group")
         events = []
 
         @view.connect("before")
@@ -147,8 +146,8 @@ class TestFullViewSetup:
             ("disconnect", 1000),
         ]
 
-    def test_view_callbacks_access_conn_data(self):
-        view = Websocket("ws/conn_access/", "conn_access")
+    def test_view_callbacks_access_conn_data(self, ws_server):
+        view = ws_server.create_route("ws/conn_access/", "conn_access")
         captured_data = {}
 
         @view.connect("before")

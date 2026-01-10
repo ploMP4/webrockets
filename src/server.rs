@@ -11,17 +11,18 @@ use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::{mpsc, watch, RwLock};
 
+use crate::broker::config::BrokerConfig;
 use crate::callback::Callback;
 use crate::channel_store::ChannelStore;
 use crate::connection::{Connection, IncomingConnection};
-use crate::socket_view::{FrozenHandlers, SocketView};
+use crate::socket_view::{FrozenHandlers, WebsocketRoute};
 use crate::{start_python_event_loop, Message};
 
 const CHANNEL_BUFFER_SIZE: usize = 10000;
 
 struct AppState {
     channels: Arc<ChannelStore>,
-    registry: RwLock<HashMap<String, Arc<Py<SocketView>>>>,
+    registry: RwLock<HashMap<String, Arc<Py<WebsocketRoute>>>>,
 }
 
 impl AppState {
@@ -40,6 +41,12 @@ pub(crate) struct WebsocketServer {
     context: RwLock<Vec<(String, String)>>,
     shutdown_tx: watch::Sender<bool>,
     shutdown_rx: watch::Receiver<bool>,
+
+    #[pyo3(get)]
+    host: String,
+    #[pyo3(get)]
+    port: u16,
+    broker_config: Option<BrokerConfig>,
 }
 
 struct ReceiveCallback {
@@ -49,7 +56,7 @@ struct ReceiveCallback {
 }
 
 impl WebsocketServer {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(host: String, port: u16, broker_config: Option<BrokerConfig>) -> Self {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         Self {
             rt: Runtime::new().expect("Unable to create tokio runtime"),
@@ -57,15 +64,13 @@ impl WebsocketServer {
             context: RwLock::new(Vec::new()),
             shutdown_tx,
             shutdown_rx,
+            host,
+            port,
+            broker_config,
         }
     }
 
-    fn runserver(
-        &self,
-        host: &str,
-        port: &str,
-        broker_config: Option<crate::broker::config::BrokerConfig>,
-    ) {
+    fn runserver(&self) -> PyResult<()> {
         let mut shutdown_rx = self.shutdown_rx.clone();
         shutdown_rx.mark_unchanged();
 
@@ -81,13 +86,17 @@ impl WebsocketServer {
                 );
             }
 
-            if let Some(config) = broker_config {
+            if let Some(config) = &self.broker_config {
                 let channels = Arc::clone(&self.state.channels);
                 let shutdown = self.shutdown_rx.clone();
-                tokio::spawn(crate::broker::broker_listener(config, channels, shutdown));
+                tokio::spawn(crate::broker::broker_listener(
+                    config.clone(),
+                    channels,
+                    shutdown,
+                ));
             }
 
-            let listener = tokio::net::TcpListener::bind(format!("{}:{}", host, port))
+            let listener = tokio::net::TcpListener::bind(format!("{}:{}", self.host, self.port))
                 .await
                 .unwrap();
 
@@ -107,6 +116,8 @@ impl WebsocketServer {
                 .await
                 .unwrap();
         });
+
+        Ok(())
     }
 
     fn authenticated(
@@ -163,7 +174,7 @@ impl WebsocketServer {
     }
 
     async fn authenticate_and_connect(
-        handler: Arc<Py<SocketView>>,
+        handler: Arc<Py<WebsocketRoute>>,
         conn: Py<IncomingConnection>,
     ) -> Result<Py<Connection>, Response> {
         let result = tokio::task::spawn_blocking(move || {
@@ -356,7 +367,7 @@ impl WebsocketServer {
         group: String,
         state: Arc<AppState>,
         conn: Py<Connection>,
-        handler: Arc<Py<SocketView>>,
+        handler: Arc<Py<WebsocketRoute>>,
     ) -> Result<(), WebSocketError> {
         let (reader, writer) = fut.await?.split(tokio::io::split);
         let reader = fastwebsockets::FragmentCollectorRead::new(reader);
@@ -411,23 +422,16 @@ impl WebsocketServer {
 
 #[pymethods]
 impl WebsocketServer {
-    #[pyo3(signature = (host="0.0.0.0", port=46290, broker=None))]
-    fn start(
-        &self,
-        py: Python<'_>,
-        host: &str,
-        port: u16,
-        broker: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<()> {
+    #[new]
+    #[pyo3(signature = (host="0.0.0.0".to_string(), port=46290, broker=None))]
+    fn __new__(host: String, port: u16, broker: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+        let broker_config = broker.map(|dict| BrokerConfig::from_py(dict)).transpose()?;
+        Ok(Self::new(host, port, broker_config))
+    }
+
+    fn start(&self, py: Python<'_>) -> PyResult<()> {
         start_python_event_loop(py)?;
-
-        let broker_config = broker
-            .map(|dict| crate::broker::config::BrokerConfig::from_py(dict))
-            .transpose()?;
-
-        let port_str = port.to_string();
-        py.detach(|| self.runserver(host, &port_str, broker_config));
-        Ok(())
+        py.detach(|| -> PyResult<()> { self.runserver() })
     }
 
     fn stop(&self) {
@@ -435,20 +439,20 @@ impl WebsocketServer {
     }
 
     #[pyo3(signature = (path, group, authentication_classes = None))]
-    fn __call__(
+    fn create_route(
         &self,
         py: Python<'_>,
         path: String,
         group: String,
         authentication_classes: Option<Vec<Py<PyAny>>>,
-    ) -> PyResult<Py<SocketView>> {
+    ) -> PyResult<Py<WebsocketRoute>> {
         self.context
             .blocking_write()
             .push((group.clone(), path.clone()));
 
         let instance = Py::new(
             py,
-            SocketView::new(
+            WebsocketRoute::new(
                 path.clone(),
                 group,
                 authentication_classes.unwrap_or_default(),
