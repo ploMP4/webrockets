@@ -11,8 +11,8 @@ mod callback;
 mod channel_store;
 mod connection;
 mod receive_handler;
+mod route;
 mod server;
-mod socket_view;
 
 static TASK_LOCALS: OnceLock<TaskLocals> = OnceLock::new();
 static ASYNC_NOOP: OnceLock<Py<PyAny>> = OnceLock::new();
@@ -89,15 +89,15 @@ mod pywsrs {
     #[pymodule_export]
     use super::connection::IncomingConnection;
     #[pymodule_export]
+    use super::route::ConnectDecorator;
+    #[pymodule_export]
+    use super::route::Match;
+    #[pymodule_export]
+    use super::route::ReceiveDecorator;
+    #[pymodule_export]
+    use super::route::WebsocketRoute;
+    #[pymodule_export]
     use super::server::WebsocketServer;
-    #[pymodule_export]
-    use super::socket_view::ConnectDecorator;
-    #[pymodule_export]
-    use super::socket_view::Match;
-    #[pymodule_export]
-    use super::socket_view::ReceiveDecorator;
-    #[pymodule_export]
-    use super::socket_view::WebsocketRoute;
 
     #[pymodule_init]
     fn init(_: &Bound<'_, PyModule>) -> PyResult<()> {

@@ -15,7 +15,7 @@ use crate::broker::config::BrokerConfig;
 use crate::callback::Callback;
 use crate::channel_store::ChannelStore;
 use crate::connection::{Connection, IncomingConnection};
-use crate::socket_view::{FrozenHandlers, WebsocketRoute};
+use crate::route::{FrozenHandlers, WebsocketRoute};
 use crate::{start_python_event_loop, Message};
 
 const CHANNEL_BUFFER_SIZE: usize = 10000;
