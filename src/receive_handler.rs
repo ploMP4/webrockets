@@ -9,11 +9,7 @@ pub(crate) struct ReceiveHandler {
 }
 
 impl ReceiveHandler {
-    pub(crate) fn new(
-        callback: Callback,
-        schema: Option<Py<PyAny>>,
-        remove_key: bool,
-    ) -> Self {
+    pub(crate) fn new(callback: Callback, schema: Option<Py<PyAny>>, remove_key: bool) -> Self {
         Self {
             callback,
             schema,
