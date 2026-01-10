@@ -7,7 +7,7 @@ import time
 import pytest
 import websockets
 from pydantic import BaseModel
-from pywsrs import IncomingConnection, Websocket
+from pywsrs import IncomingConnection, Match, Websocket
 
 test_state = {
     "connected": [],
@@ -76,7 +76,7 @@ def setup_routes():
 
     @chat_view.receive
     def chat_receive(conn, data):
-        Websocket.broadcast_text(["chat"], data)
+        conn.broadcast(["chat"], data)
         test_state["messages"].append(("chat", data))
 
     @chat_view.disconnect
@@ -138,10 +138,10 @@ def setup_routes():
         await asyncio.sleep(0.1)
         test_state["disconnected"].append(("async", code, reason))
 
-    # Pattern matching routes (default discriminator is "type")
+    # Pattern matching routes
     pattern_view = Websocket("ws/pattern/", "pattern")
 
-    @pattern_view.receive_match("chat", schema=ChatMessage)
+    @pattern_view.receive(match=Match("type", "chat"), schema=ChatMessage)
     def on_chat(conn, data: ChatMessage):
         pattern_state["chat_messages"].append(
             {
@@ -151,7 +151,7 @@ def setup_routes():
         )
         conn.send(json.dumps({"status": "received", "type": "chat"}))
 
-    @pattern_view.receive_match("join", schema=JoinRoom)
+    @pattern_view.receive(match=Match("type", "join"), schema=JoinRoom)
     def on_join(conn, data: JoinRoom):
         pattern_state["join_events"].append(
             {
@@ -161,7 +161,7 @@ def setup_routes():
         )
         conn.send(json.dumps({"status": "joined", "room": data.room}))
 
-    @pattern_view.receive_match("leave", schema=LeaveRoom)
+    @pattern_view.receive(match=Match("type", "leave"), schema=LeaveRoom)
     def on_leave(conn, data: LeaveRoom):
         pattern_state["leave_events"].append({"room": data.room})
         conn.send(json.dumps({"status": "left", "room": data.room}))
@@ -171,15 +171,15 @@ def setup_routes():
         pattern_state["unknown_messages"].append(data)
         conn.send(json.dumps({"status": "unknown", "raw": str(data)[:100]}))
 
-    # Custom discriminator test
-    custom_view = Websocket("ws/custom-disc/", "custom-disc", discriminator="action")
+    # Custom discriminator test (using "action" key instead of "type")
+    custom_view = Websocket("ws/custom-disc/", "custom-disc")
 
-    @custom_view.receive_match("ping", schema=PingMessage)
+    @custom_view.receive(match=Match("action", "ping"), schema=PingMessage)
     def on_ping(conn, data: PingMessage):
         pattern_state["ping_events"].append({"timestamp": data.timestamp})
         conn.send(json.dumps({"action": "pong", "timestamp": data.timestamp}))
 
-    @custom_view.receive_match("pong", schema=PongMessage)
+    @custom_view.receive(match=Match("action", "pong"), schema=PongMessage)
     def on_pong(conn, data: PongMessage):
         pattern_state["pong_events"].append({"timestamp": data.timestamp})
         conn.send(json.dumps({"status": "pong_received"}))
@@ -187,7 +187,7 @@ def setup_routes():
     # Raw match without schema
     raw_view = Websocket("ws/raw-match/", "raw-match")
 
-    @raw_view.receive_match("echo")
+    @raw_view.receive(match=Match("type", "echo"))
     def on_echo_raw(conn, data: str):
         conn.send(f"raw: {data}")
 

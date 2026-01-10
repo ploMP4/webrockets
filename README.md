@@ -127,53 +127,105 @@ class MyTokenAuth(CookieTokenAuthentication):
         return User.objects.filter(auth_token=token).first()
 ```
 
-## Pattern Matching with Pydantic
+## Pattern Matching
 
-Route messages based on a discriminator field with optional Pydantic validation:
+Route messages based on JSON fields using the `Match` class:
 
 ```python
 from pydantic import BaseModel
-from pywsrs import Websocket
+from pywsrs import Match, Websocket
 
 class ChatMessage(BaseModel):
     type: str
     content: str
     room: str
 
-class JoinRoom(BaseModel):
-    type: str
-    room: str
-
-# Default discriminator is "type"
 chat = Websocket("ws/chat/", "chat")
 
-@chat.receive_match("message", schema=ChatMessage)
+# Match on a single key/value with Pydantic validation
+@chat.receive(match=Match("type", "message"), schema=ChatMessage)
 def on_chat(conn, data: ChatMessage):
     conn.broadcast([data.room], data.content)
 
-@chat.receive_match("join", schema=JoinRoom)
-def on_join(conn, data: JoinRoom):
-    conn.send(f"Joined room: {data.room}")
+# Match without schema - data is the raw JSON string
+@chat.receive(match=Match("type", "ping"))
+def on_ping(conn, data: str):
+    conn.send('{"type": "pong"}')
 
 # Fallback for unmatched messages
 @chat.receive
 def on_fallback(conn, data):
     conn.send("Unknown message type")
-
-Websocket.start()
 ```
 
-Use a custom discriminator field:
+### Multiple Keys and Values
+
+Match on multiple keys (OR logic) or multiple values:
 
 ```python
-# Use "action" instead of "type" as discriminator
-api = Websocket("ws/api/", "api", discriminator="action")
+# Match if "type" OR "action" field equals "message"
+@chat.receive(match=Match(["type", "action"], "message"))
+def on_message(conn, data):
+    pass
 
-@api.receive_match("ping")
-def on_ping(conn, data):
-    conn.send('{"action": "pong"}')
+# Match if "type" equals "msg" OR "message" OR "chat"
+@chat.receive(match=Match("type", ["msg", "message", "chat"]))
+def on_chat(conn, data):
+    pass
 
-Websocket.start()
+# Combine both - match any key with any value
+@chat.receive(match=Match(["type", "action"], ["ping", "health"]))
+def on_health_check(conn, data):
+    conn.send('{"status": "ok"}')
+```
+
+### Integer Values
+
+Match on integer values in JSON:
+
+```python
+# Match {"code": 1}
+@chat.receive(match=Match("code", 1))
+def on_code_1(conn, data):
+    pass
+
+# Match multiple codes
+@chat.receive(match=Match("code", [1, 2, 3]))
+def on_codes(conn, data):
+    pass
+
+# Mix strings and integers
+@chat.receive(match=Match("type", ["message", 1, 2]))
+def on_mixed(conn, data):
+    pass
+```
+
+### Wildcard Matching
+
+Use `"*"` to match any value for a key:
+
+```python
+# Match any message that has a "type" field, regardless of value
+@chat.receive(match=Match("type", "*"))
+def on_any_typed_message(conn, data):
+    pass
+
+# Match if message has "type" OR "action" field with any value
+@chat.receive(match=Match(["type", "action"], "*"))
+def on_any_action(conn, data):
+    pass
+```
+
+### Remove Matched Key
+
+Strip the discriminator key from the JSON before passing to the handler:
+
+```python
+# Input: {"type": "chat", "content": "hello"}
+# Handler receives: {"content": "hello"}
+@chat.receive(match=Match("type", "chat", remove_key=True))
+def on_chat(conn, data):
+    pass
 ```
 
 ## Broadcasting
@@ -239,3 +291,9 @@ async def on_message(conn, data):
     result = await fetch_from_database(data)
     await conn.asend(result)
 ```
+
+
+- [ ] remove weird start method
+- [ ] logging examples
+- [ ] add on request log
+- [ ] turn off logging option

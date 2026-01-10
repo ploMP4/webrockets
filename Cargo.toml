@@ -17,6 +17,7 @@ axum-server = { version = "0.7.2", features = ["tls-rustls"] }
 fastwebsockets = { version = "0.10.0", features = ["unstable-split", "upgrade", "with_axum"] }
 futures-util = { version = "0.3.31", features = ["sink"] }
 headers = "0.4.1"
+indexmap = "2"
 log = "0.4.29"
 pyo3 = "0.27.1"
 pyo3-log = "0.13.2"

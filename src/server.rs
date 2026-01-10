@@ -5,6 +5,7 @@ use axum::{routing::get, Router};
 use fastwebsockets::{upgrade, Frame, OpCode, WebSocketError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
@@ -13,8 +14,7 @@ use tokio::sync::{mpsc, watch, RwLock};
 use crate::callback::Callback;
 use crate::channel_store::ChannelStore;
 use crate::connection::{Connection, IncomingConnection};
-use crate::receive_handler::ReceiveHandler;
-use crate::socket_view::SocketView;
+use crate::socket_view::{FrozenHandlers, SocketView};
 use crate::{start_python_event_loop, Message};
 
 const CHANNEL_BUFFER_SIZE: usize = 10000;
@@ -44,8 +44,8 @@ pub(crate) struct WebsocketServer {
 
 struct ReceiveCallback {
     generic: Option<Callback>,
-    handlers: Vec<ReceiveHandler>,
-    discriminator: String,
+    generic_schema: Option<Py<PyAny>>,
+    handlers: FrozenHandlers,
 }
 
 impl WebsocketServer {
@@ -273,29 +273,44 @@ impl WebsocketServer {
                             }
                         };
 
-                        let handler = match serde_json::from_str::<serde_json::Value>(payload_str) {
-                            Ok(json_value) => json_value
-                                .get(&receive_callback.discriminator)
-                                .and_then(|v| match v {
-                                    serde_json::Value::String(s) => Some(s.as_str()),
-                                    _ => None,
-                                })
-                                .and_then(|v| {
-                                    receive_callback.handlers.iter().find(|h| h.matches(v))
-                                }),
-                            Err(_) => None,
-                        };
+                        let json_value =
+                            serde_json::from_str::<serde_json::Value>(payload_str).ok();
 
-                        match handler {
-                            Some(handler) => {
+                        let match_result = json_value.as_ref().and_then(|json| {
+                            for (key, value_map) in receive_callback.handlers.iter() {
+                                if let Some(json_val) = json.get(key.as_ref()) {
+                                    for (match_val, handler) in value_map.iter() {
+                                        if match_val.matches_json(json_val) {
+                                            return Some((handler, key));
+                                        }
+                                    }
+                                }
+                            }
+                            None
+                        });
+
+                        match match_result {
+                            Some((handler, matched_key)) => {
+                                let payload: Cow<'_, str> = if handler.remove_key {
+                                    let mut json = json_value.unwrap(); // Safe: we matched on it
+                                    if let Some(obj) = json.as_object_mut() {
+                                        obj.remove(matched_key.as_ref());
+                                    }
+                                    Cow::Owned(serde_json::to_string(&json).unwrap_or_default())
+                                } else {
+                                    Cow::Borrowed(payload_str)
+                                };
+
                                 Python::attach(|py| {
                                     if let Err(e) = match &handler.schema {
                                         Some(schema) => handler.callback.invoke_with_schema(
                                             py,
-                                            (&conn, payload_str),
+                                            (&conn, &payload),
                                             schema,
                                         ),
-                                        None => handler.callback.invoke(py, (&conn, payload_str)),
+                                        None => {
+                                            handler.callback.invoke(py, (&conn, payload.as_ref()))
+                                        }
                                     } {
                                         log::error!("Error in receive callback: {}", e);
                                     };
@@ -303,11 +318,18 @@ impl WebsocketServer {
                             }
                             None => {
                                 if let Some(cb) = &receive_callback.generic {
-                                    if let Err(e) =
-                                        Python::attach(|py| cb.invoke(py, (&conn, payload_str)))
-                                    {
-                                        log::error!("Error in receive callback: {}", e);
-                                    }
+                                    Python::attach(|py| {
+                                        if let Err(e) = match &receive_callback.generic_schema {
+                                            Some(schema) => cb.invoke_with_schema(
+                                                py,
+                                                (&conn, payload_str),
+                                                schema,
+                                            ),
+                                            None => cb.invoke(py, (&conn, payload_str)),
+                                        } {
+                                            log::error!("Error in receive callback: {}", e);
+                                        }
+                                    });
                                 }
                             }
                         };
@@ -358,12 +380,11 @@ impl WebsocketServer {
             (
                 ReceiveCallback {
                     generic: view.generic_receive.as_ref().map(|cb| cb.clone_ref(py)),
-                    handlers: view
-                        .receive_handlers
-                        .iter()
-                        .map(|h| h.clone_ref(py))
-                        .collect(),
-                    discriminator: view.discriminator.clone(),
+                    generic_schema: view
+                        .generic_receive_schema
+                        .as_ref()
+                        .map(|s| s.clone_ref(py)),
+                    handlers: view.frozen_handlers(),
                 },
                 view.disconnect_callback.as_ref().map(|cb| cb.clone_ref(py)),
             )
@@ -413,14 +434,13 @@ impl WebsocketServer {
         let _ = self.shutdown_tx.send(true);
     }
 
-    #[pyo3(signature = (path, group, authentication_classes = None, discriminator = "type".to_string()))]
+    #[pyo3(signature = (path, group, authentication_classes = None))]
     fn __call__(
         &self,
         py: Python<'_>,
         path: String,
         group: String,
         authentication_classes: Option<Vec<Py<PyAny>>>,
-        discriminator: String,
     ) -> PyResult<Py<SocketView>> {
         self.context
             .blocking_write()
@@ -432,7 +452,6 @@ impl WebsocketServer {
                 path.clone(),
                 group,
                 authentication_classes.unwrap_or_default(),
-                discriminator,
             ),
         )?;
         let instance_ref = instance.clone_ref(py);

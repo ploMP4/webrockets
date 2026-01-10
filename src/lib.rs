@@ -96,6 +96,8 @@ mod pywsrs {
     use super::socket_view::ReceiveDecorator;
     #[pymodule_export]
     use super::socket_view::SocketView;
+    #[pymodule_export]
+    use super::socket_view::Match;
 
     #[pymodule_init]
     fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {

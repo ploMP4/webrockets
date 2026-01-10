@@ -1,4 +1,4 @@
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Iterable
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -13,6 +13,10 @@ from pywsrs.auth import BaseAuthentication
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
+
+# Type aliases for Match parameters
+MatchKey = str | Iterable[str]
+MatchValue = str | int | Literal["*"] | Iterable[str | int | Literal["*"]]
 
 class _RedisBrokerConfigOptional(TypedDict, total=False):
     url: str  # default: "redis://localhost:6379"
@@ -72,10 +76,38 @@ class ReceiveDecorator(Generic[T_Schema]):
         self, func: Callable[[Connection, T_Schema], None | Coroutine[Any, Any, None]]
     ) -> Callable[[Connection, T_Schema], None | Coroutine[Any, Any, None]]: ...
 
+class Match:
+    """
+    Pattern matcher for receive handlers.
+
+    Supports matching on JSON message fields with:
+    - Single or multiple keys: Match("type", ...) or Match(["type", "action"], ...)
+    - Single or multiple values: Match(..., "message") or Match(..., ["msg", "notify"])
+    - Integer values: Match("code", 1) or Match("code", [1, 2, 3])
+    - Wildcard matching: Match("type", "*") matches any value
+    - Mixed types: Match("type", ["message", 1, "*"])
+
+    Args:
+        key: Field name(s) to match on (string or iterable of strings)
+        value: Value(s) to match (string, int, "*" for wildcard, or iterable)
+        remove_key: If True, removes the matched key from the JSON before passing to handler
+    """
+
+    key: list[str]
+    value: list[str | int]
+    remove_key: bool
+
+    def __init__(
+        self,
+        key: MatchKey,
+        value: MatchValue,
+        *,
+        remove_key: bool = False,
+    ) -> None: ...
+
 class SocketView:
     path: str
     group: str
-    discriminator: str
 
     @overload
     def connect(
@@ -87,15 +119,23 @@ class SocketView:
         self,
         when: Literal["after"],
     ) -> ConnectDecorator[Connection]: ...
+    @overload
     def receive(
         self,
         func: Callable[[Connection, str | bytes], None | Coroutine[Any, Any, None]],
+        /,
     ) -> Callable[[Connection, str | bytes], None | Coroutine[Any, Any, None]]: ...
     @overload
-    def receive_match(self, match: str, /) -> ReceiveDecorator[str]: ...
+    def receive(
+        self,
+        match: Match,
+    ) -> ReceiveDecorator[str]: ...
     @overload
-    def receive_match(
-        self, match: str, /, schema: type[T_Schema]
+    def receive(
+        self,
+        match: Match,
+        *,
+        schema: type[T_Schema],
     ) -> ReceiveDecorator[T_Schema]: ...
     def disconnect(
         self,

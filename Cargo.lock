@@ -1957,6 +1957,7 @@ dependencies = [
  "fastwebsockets",
  "futures-util",
  "headers",
+ "indexmap",
  "lapin",
  "log",
  "pyo3",
