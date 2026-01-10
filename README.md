@@ -33,10 +33,13 @@ pip install pywsrs[schema,django]
 ## Quick Start
 
 ```python
-from pywsrs import Websocket
+from pywsrs import WebsocketServer
 
-# Create a WebSocket route
-echo = Websocket("ws/echo/", "echo")
+# Create a WebSocket server
+server = WebsocketServer(host="0.0.0.0", port=8080)
+
+# Create a route on the server
+echo = server.create_route("ws/echo/", "echo")
 
 @echo.connect("before")
 def on_connect(conn):
@@ -51,7 +54,7 @@ def on_message(conn, data):
 def on_disconnect(conn, code=None, reason=None):
     print(f"Client disconnected: {code}")
 
-Websocket.start()
+server.start()
 ```
 
 ## Django Integration
@@ -60,23 +63,31 @@ pywsrs provides seamless Django integration with built-in authentication support
 
 ### Setup
 
-Add `pywsrs.django` to your `INSTALLED_APPS`:
+Add `pywsrs` to your `INSTALLED_APPS`:
 
 ```python
 INSTALLED_APPS = [
     ...
-    "pywsrs.django",
+    "pywsrs",
 ]
+```
+
+Optionally configure the server in your settings:
+
+```python
+WEBSOCKET_HOST = "0.0.0.0"  # default
+WEBSOCKET_PORT = 46290      # default
+WEBSOCKET_BROKER = None     # or {"type": "redis", "url": "redis://localhost:6379"}
 ```
 
 Create your WebSocket routes in a `websockets.py` file in any of your Django apps:
 
 ```python
 # myapp/websockets.py
-from pywsrs import Websocket
+from pywsrs.django import server
 from pywsrs.django.auth import SessionAuthentication
 
-chat = Websocket(
+chat = server.create_route(
     "ws/chat/",
     "chat",
     authentication_classes=[SessionAuthentication()]
@@ -106,6 +117,7 @@ python manage.py runwebsockets
 pywsrs includes several authentication classes following Django REST Framework patterns:
 
 ```python
+from pywsrs.django import server
 from pywsrs.django.auth import (
     SessionAuthentication,       # Django session-based auth
     CookieTokenAuthentication,   # Token from cookie
@@ -114,7 +126,7 @@ from pywsrs.django.auth import (
 )
 
 # Use session auth (for browser clients)
-chat = Websocket("ws/chat/", "chat", authentication_classes=[
+chat = server.create_route("ws/chat/", "chat", authentication_classes=[
     SessionAuthentication()
 ])
 
@@ -133,14 +145,15 @@ Route messages based on JSON fields using the `Match` class:
 
 ```python
 from pydantic import BaseModel
-from pywsrs import Match, Websocket
+from pywsrs import Match, WebsocketServer
 
 class ChatMessage(BaseModel):
     type: str
     content: str
     room: str
 
-chat = Websocket("ws/chat/", "chat")
+server = WebsocketServer()
+chat = server.create_route("ws/chat/", "chat")
 
 # Match on a single key/value with Pydantic validation
 @chat.receive(match=Match("type", "message"), schema=ChatMessage)
@@ -233,9 +246,10 @@ def on_chat(conn, data):
 Broadcast messages to all clients in a group:
 
 ```python
-from pywsrs import Websocket
+from pywsrs import WebsocketServer
 
-chat = Websocket("ws/chat/", "chat")
+server = WebsocketServer()
+chat = server.create_route("ws/chat/", "chat")
 
 @chat.receive
 def on_message(conn, data):
@@ -293,7 +307,6 @@ async def on_message(conn, data):
 ```
 
 
-- [ ] remove weird start method
 - [ ] logging examples
 - [ ] add on request log
 - [ ] turn off logging option
