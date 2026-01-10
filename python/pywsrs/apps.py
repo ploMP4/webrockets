@@ -1,8 +1,15 @@
+import importlib
+
+if importlib.util.find_spec("django") is None:
+    raise ImportError(
+        'Django is required to use apps.py. Install with: pip install "pywsrs[django]"'
+    )
+
 from django.apps import AppConfig
 
 
 class WsRsAppConfig(AppConfig):
-    name = "pywsrs.django"
+    name = "pywsrs"
     verbose_name = "pywsrs"
 
     def ready(self) -> None:

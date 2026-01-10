@@ -17,10 +17,11 @@ from .auth import (
     SessionAuthentication,
 )
 
-host = getattr(settings, "WEBSOCKET_HOST", "0.0.0.0")
-port = getattr(settings, "WEBSOCKET_PORT", 46290)
-broker = getattr(settings, "WEBSOCKET_BROKER", None)
-server = WebsocketServer(host, port, broker)
+server = WebsocketServer(
+    getattr(settings, "WEBSOCKET_HOST", "0.0.0.0"),
+    getattr(settings, "WEBSOCKET_PORT", 46290),
+    getattr(settings, "WEBSOCKET_BROKER", None),
+)
 
 __all__ = [
     "AuthenticationFailed",
