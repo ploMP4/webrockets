@@ -1,0 +1,66 @@
+services:
+  pywsrs:
+    network_mode: host
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    build:
+      context: .
+      dockerfile: servers/pywsrs/Dockerfile
+    restart: unless-stopped
+
+  pywsrs-django:
+    network_mode: host
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    build:
+      context: .
+      dockerfile: servers/pywsrs-django/Dockerfile
+    restart: unless-stopped
+
+  channels:
+    network_mode: host
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    build:
+      context: .
+      dockerfile: servers/channels/Dockerfile
+    restart: unless-stopped
+
+  fastapi:
+    network_mode: host
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    build:
+      context: .
+      dockerfile: servers/fastapi/Dockerfile
+    restart: unless-stopped
+
+  bolt:
+    network_mode: host
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    build:
+      context: .
+      dockerfile: servers/bolt/Dockerfile
+    restart: unless-stopped
+
+  websockets:
+    network_mode: host
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    build:
+      context: .
+      dockerfile: servers/websockets/Dockerfile
+    restart: unless-stopped

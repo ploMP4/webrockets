@@ -27,6 +27,8 @@
               gcc
               gnumake
               deno
+              docker
+              docker-compose
             ];
 
             shellHook = ''
