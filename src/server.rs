@@ -286,8 +286,12 @@ impl WebsocketServer {
                             }
                         };
 
-                        let json_value =
-                            serde_json::from_str::<serde_json::Value>(payload_str).ok();
+                        // Only parse JSON if we have pattern match handlers
+                        let json_value = if !receive_callback.handlers.is_empty() {
+                            serde_json::from_str::<serde_json::Value>(payload_str).ok()
+                        } else {
+                            None
+                        };
 
                         let match_result = json_value.as_ref().and_then(|json| {
                             for (key, value_map) in receive_callback.handlers.iter() {
