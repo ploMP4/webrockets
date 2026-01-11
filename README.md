@@ -306,7 +306,84 @@ async def on_message(conn, data):
     await conn.asend(result)
 ```
 
+## Logging
 
-- [ ] logging examples
-- [ ] add on request log
-- [ ] turn off logging option
+pywsrs uses Python's standard logging module. Logs are emitted to the following loggers:
+
+- `pywsrs` - Root logger for all pywsrs logs
+- `pywsrs.server` - Server startup, shutdown, and connection errors
+- `pywsrs.broker.redis` - Redis broker connection and message logs
+- `pywsrs.broker.amqp` - RabbitMQ broker connection and message logs
+
+### Django
+
+Use the `--log-level` flag with the management command:
+
+```bash
+python manage.py runwebsockets --log-level info
+```
+
+Or configure logging in your Django settings:
+
+```python
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+        },
+    },
+    "loggers": {
+        "pywsrs": {
+            "handlers": ["console"],
+            "level": "INFO",
+        },
+    },
+}
+```
+
+### Standalone Python
+
+For standalone scripts, configure logging before starting the server:
+
+```python
+import logging
+from pywsrs import WebsocketServer
+
+# Simple configuration
+logging.basicConfig(level=logging.INFO)
+
+# Or configure just pywsrs
+logging.getLogger("pywsrs").setLevel(logging.INFO)
+logging.getLogger("pywsrs").addHandler(logging.StreamHandler())
+
+server = WebsocketServer()
+# ... configure routes ...
+server.start()
+```
+
+### structlog
+
+pywsrs works with structlog since it uses standard Python logging:
+
+```python
+import logging
+import structlog
+
+structlog.configure(
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.JSONRenderer(),
+    ],
+    wrapper_class=structlog.stdlib.BoundLogger,
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+)
+
+# Configure pywsrs to use structlog's logging
+logging.getLogger("pywsrs").setLevel(logging.INFO)
+```

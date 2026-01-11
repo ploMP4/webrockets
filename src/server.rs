@@ -148,6 +148,8 @@ impl WebsocketServer {
         path: String,
         group: String,
     ) -> Response {
+        log::info!("incomming connection {}", uri.path());
+
         let conn = IncomingConnection::py_new(&uri, &headers);
 
         let Some(handler) = state.registry.read().await.get(&path).cloned() else {
@@ -415,6 +417,7 @@ impl WebsocketServer {
             _ = &mut receive_task => send_task.abort(),
         }
 
+        log::info!("connection closed");
         state.channels.remove(channel_id);
         Ok(())
     }
