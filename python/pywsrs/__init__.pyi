@@ -60,8 +60,24 @@ class Connection(BaseConnection):
     async def asend(self, msg: str | bytes) -> None: ...
     def close(self, code: int = 1000, reason: str = "") -> None: ...
     async def aclose(self, code: int = 1000, reason: str = "") -> None: ...
-    def broadcast(self, groups: list[str], msg: str | bytes) -> None: ...
-    async def abroadcast(self, groups: list[str], msg: str | bytes) -> None: ...
+    def broadcast(
+        self, groups: list[str], msg: str | bytes, exclude_self: bool = False
+    ) -> None: ...
+    async def abroadcast(
+        self, groups: list[str], msg: str | bytes, exclude_self: bool = False
+    ) -> None: ...
+    def join(self, group: str) -> bool:
+        """Join a group dynamically. Returns True if newly joined, False if already a member."""
+        ...
+    def leave(self, group: str) -> bool:
+        """Leave a group dynamically. Returns True if was a member, False otherwise."""
+        ...
+    def groups(self) -> list[str]:
+        """Get all groups this connection belongs to."""
+        ...
+    def group_size(self, group: str) -> int:
+        """Get the number of connections in a group."""
+        ...
 
 T_Connection = TypeVar("T_Connection", bound=IncomingConnection | Connection)
 T_Schema = TypeVar("T_Schema", bound="BaseModel" | str)
@@ -107,7 +123,7 @@ class Match:
 
 class WebsocketRoute:
     path: str
-    group: str
+    default_group: str | None
     authentication_classes: list[BaseAuthentication] | None = None
 
     @overload
@@ -129,13 +145,14 @@ class WebsocketRoute:
     @overload
     def receive(
         self,
+        /,
         match: Match,
     ) -> ReceiveDecorator[str]: ...
     @overload
     def receive(
         self,
+        /,
         match: Match,
-        *,
         schema: type[T_Schema],
     ) -> ReceiveDecorator[T_Schema]: ...
     def disconnect(
@@ -155,9 +172,10 @@ class WebsocketServer:
     def create_route(
         self,
         path: str,
-        group: str,
+        default_group: str | None = None,
         authentication_classes: list[BaseAuthentication] | None = None,
     ) -> WebsocketRoute: ...
+    def addr(self) -> str: ...
 
 # Broker functions for external broadcasting (e.g., from Django views, Celery tasks)
 def setup_broadcast(config: BrokerConfig) -> None:

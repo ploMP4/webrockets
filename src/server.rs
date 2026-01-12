@@ -38,7 +38,7 @@ impl AppState {
 pub(crate) struct WebsocketServer {
     rt: Runtime,
     state: Arc<AppState>,
-    context: RwLock<Vec<(String, String)>>,
+    context: RwLock<Vec<(Option<String>, String)>>, // (default_group, path)
     shutdown_tx: watch::Sender<bool>,
     shutdown_rx: watch::Receiver<bool>,
 
@@ -76,12 +76,19 @@ impl WebsocketServer {
 
         self.rt.block_on(async {
             let mut app = Router::new();
-            for (group, path) in self.context.read().await.clone() {
+            for (default_group, path) in self.context.read().await.clone() {
                 let route_path = format!("/{path}");
                 app = app.route(
                     &route_path,
                     get(move |uri, headers, ws, State(state)| {
-                        WebsocketServer::handle_ws_upgrade(uri, headers, ws, state, path, group)
+                        WebsocketServer::handle_ws_upgrade(
+                            uri,
+                            headers,
+                            ws,
+                            state,
+                            path,
+                            default_group,
+                        )
                     }),
                 );
             }
@@ -146,7 +153,7 @@ impl WebsocketServer {
         ws: upgrade::IncomingUpgrade,
         state: Arc<AppState>,
         path: String,
-        group: String,
+        default_group: Option<String>,
     ) -> Response {
         log::info!("incomming connection {}", uri.path());
 
@@ -167,7 +174,9 @@ impl WebsocketServer {
         };
 
         tokio::spawn(async move {
-            if let Err(e) = WebsocketServer::handle_client(fut, group, state, conn, handler).await {
+            if let Err(e) =
+                WebsocketServer::handle_client(fut, default_group, state, conn, handler).await
+            {
                 log::error!("Error in websocket connection: {}", e);
             }
         });
@@ -370,7 +379,7 @@ impl WebsocketServer {
 
     async fn handle_client(
         fut: upgrade::UpgradeFut,
-        group: String,
+        default_group: Option<String>,
         state: Arc<AppState>,
         conn: Py<Connection>,
         handler: Arc<Py<WebsocketRoute>>,
@@ -380,11 +389,19 @@ impl WebsocketServer {
 
         let (tx, rx) = mpsc::channel(CHANNEL_BUFFER_SIZE);
         let tx_arc: Arc<mpsc::Sender<Arc<Message>>> = Arc::new(tx);
-        let channel_id = state.channels.register(&group, tx_arc.clone());
+
+        let channel_id = match &default_group {
+            Some(group) => state.channels.register_with_group(group, tx_arc.clone()),
+            None => state.channels.register(tx_arc.clone()),
+        };
 
         let (receive_cb, disconnect_cb) = Python::attach(|py| {
-            conn.borrow_mut(py).sender = Some(tx_arc);
-            conn.borrow_mut(py).channels = Some(Arc::clone(&state.channels));
+            {
+                let mut conn_mut = conn.borrow_mut(py);
+                conn_mut.sender = Some(tx_arc);
+                conn_mut.channels = Some(Arc::clone(&state.channels));
+                conn_mut.id = Some(channel_id);
+            }
 
             let view = handler.borrow(py);
 
@@ -445,23 +462,23 @@ impl WebsocketServer {
         let _ = self.shutdown_tx.send(true);
     }
 
-    #[pyo3(signature = (path, group, authentication_classes = None))]
+    #[pyo3(signature = (path, default_group=None, authentication_classes=None))]
     fn create_route(
         &self,
         py: Python<'_>,
         path: String,
-        group: String,
+        default_group: Option<String>,
         authentication_classes: Option<Vec<Py<PyAny>>>,
     ) -> PyResult<Py<WebsocketRoute>> {
         self.context
             .blocking_write()
-            .push((group.clone(), path.clone()));
+            .push((default_group.clone(), path.clone()));
 
         let instance = Py::new(
             py,
             WebsocketRoute::new(
                 path.clone(),
-                group,
+                default_group,
                 authentication_classes.unwrap_or_default(),
             ),
         )?;
@@ -476,5 +493,9 @@ impl WebsocketServer {
             })
         });
         Ok(instance)
+    }
+
+    fn addr(&self) -> String {
+        format!("{}:{}", self.host, self.port)
     }
 }

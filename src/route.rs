@@ -150,7 +150,7 @@ pub(crate) struct WebsocketRoute {
     #[pyo3(get)]
     path: String,
     #[pyo3(get)]
-    group: String,
+    default_group: Option<String>,
     #[pyo3(get)]
     pub(crate) authentication_classes: Vec<Py<PyAny>>,
     pub(crate) connect_before_callback: Option<Callback>,
@@ -178,10 +178,14 @@ pub(crate) struct ReceiveDecorator {
 }
 
 impl WebsocketRoute {
-    pub(crate) fn new(path: String, group: String, authentication_classes: Vec<Py<PyAny>>) -> Self {
+    pub(crate) fn new(
+        path: String,
+        default_group: Option<String>,
+        authentication_classes: Vec<Py<PyAny>>,
+    ) -> Self {
         Self {
             path,
-            group,
+            default_group,
             authentication_classes,
             connect_before_callback: None,
             connect_after_callback: None,
@@ -230,7 +234,7 @@ impl WebsocketRoute {
         Ok(ConnectDecorator { view: slf, before })
     }
 
-    #[pyo3(signature = (func=None, r#match=None, *, schema=None))]
+    #[pyo3(signature = (func=None, /, r#match=None, schema=None))]
     fn receive(
         slf: Py<Self>,
         py: Python<'_>,

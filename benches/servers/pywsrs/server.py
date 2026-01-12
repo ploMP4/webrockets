@@ -51,7 +51,7 @@ init_db()
 server = WebsocketServer(host="0.0.0.0", port=6969)
 
 # Echo route
-echo = server.create_route(path="echo", group="echo")
+echo = server.create_route(path="echo", default_group="echo")
 
 
 @echo.receive
@@ -60,7 +60,7 @@ def echo_receive(conn: Connection, data: str | bytes):
 
 
 # Database route
-db = server.create_route(path="db", group="db")
+db = server.create_route(path="db", default_group="db")
 
 
 @db.receive
@@ -70,7 +70,7 @@ def db_receive(conn: Connection, data: str | bytes):
 
 
 # Compute route
-compute = server.create_route(path="compute", group="compute")
+compute = server.create_route(path="compute", default_group="compute")
 
 
 @compute.receive

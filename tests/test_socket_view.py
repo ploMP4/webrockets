@@ -8,7 +8,13 @@ class TestSocketViewCreation:
         view = ws_server.create_route("ws/test/", "test_group")
 
         assert view.path == "ws/test/"
-        assert view.group == "test_group"
+        assert view.default_group == "test_group"
+
+    def test_create_view_without_default_group(self, ws_server):
+        view = ws_server.create_route("ws/no_group/")
+
+        assert view.path == "ws/no_group/"
+        assert view.default_group is None
 
     def test_create_view_with_auth_classes(self, ws_server):
         class MockAuth(BaseAuthentication):
@@ -22,7 +28,7 @@ class TestSocketViewCreation:
         )
 
         assert view.path == "ws/secure/"
-        assert view.group == "secure_group"
+        assert view.default_group == "secure_group"
 
     def test_create_multiple_views(self, ws_server):
         view1 = ws_server.create_route("ws/chat/", "chat")
@@ -30,8 +36,8 @@ class TestSocketViewCreation:
 
         assert view1.path == "ws/chat/"
         assert view2.path == "ws/notifications/"
-        assert view1.group == "chat"
-        assert view2.group == "notifications"
+        assert view1.default_group == "chat"
+        assert view2.default_group == "notifications"
 
 
 class TestConnectDecorator:

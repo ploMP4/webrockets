@@ -35,7 +35,7 @@ pub(crate) struct BrokerMessage {
 
 impl BrokerMessage {
     pub(crate) fn dispatch(self, channels: &ChannelStore) {
-        channels.broadcast(&self.groups, Arc::new(Message::Text(self.message.into())));
+        channels.broadcast(&self.groups, Arc::new(Message::Text(self.message.into())), None);
     }
 }
 

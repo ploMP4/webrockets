@@ -122,6 +122,7 @@ impl IncomingConnection {
 pub(crate) struct Connection {
     pub(crate) sender: Option<Arc<mpsc::Sender<Arc<Message>>>>,
     pub(crate) channels: Option<Arc<ChannelStore>>,
+    pub(crate) id: Option<u64>,
 }
 
 impl Connection {
@@ -129,6 +130,7 @@ impl Connection {
         Self {
             sender: None,
             channels: None,
+            id: None,
         }
     }
 }
@@ -236,33 +238,94 @@ impl Connection {
         }
     }
 
-    fn broadcast(&self, py: Python<'_>, groups: Vec<String>, msg: Py<PyAny>) -> PyResult<()> {
+    #[pyo3(signature = (groups, msg, exclude_self=false))]
+    fn broadcast(
+        &self,
+        py: Python<'_>,
+        groups: Vec<String>,
+        msg: Py<PyAny>,
+        exclude_self: bool,
+    ) -> PyResult<()> {
         let bound = msg.bind(py);
         let message = Arc::new(Message::try_from(bound)?);
 
+        let exclude = if exclude_self { self.id } else { None };
+
         self.channels
-            .clone()
+            .as_ref()
             .ok_or_else(|| PyRuntimeError::new_err("ChannelStore is not set"))?
-            .broadcast(&groups, message);
+            .broadcast(&groups, message, exclude);
 
         Ok(())
     }
 
+    #[pyo3(signature = (groups, msg, exclude_self=false))]
     fn abroadcast<'py>(
         &self,
         py: Python<'py>,
         groups: Vec<String>,
         msg: Py<PyAny>,
+        exclude_self: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let bound = msg.bind(py);
         let message = Arc::new(Message::try_from(bound)?);
 
+        let exclude = if exclude_self { self.id } else { None };
+
         self.channels
-            .clone()
+            .as_ref()
             .ok_or_else(|| PyRuntimeError::new_err("ChannelStore is not set"))?
-            .broadcast(&groups, message);
+            .broadcast(&groups, message, exclude);
 
         noop_coroutine(py)
+    }
+
+    fn join(&self, group: String) -> PyResult<bool> {
+        let channels = self
+            .channels
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("ChannelStore is not set"))?;
+
+        let conn_id = self
+            .id
+            .ok_or_else(|| PyRuntimeError::new_err("connection not established"))?;
+
+        Ok(channels.join(conn_id, &group))
+    }
+
+    fn leave(&self, group: String) -> PyResult<bool> {
+        let channels = self
+            .channels
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("ChannelStore is not set"))?;
+
+        let conn_id = self
+            .id
+            .ok_or_else(|| PyRuntimeError::new_err("connection not established"))?;
+
+        Ok(channels.leave(conn_id, &group))
+    }
+
+    fn groups(&self) -> PyResult<Vec<String>> {
+        let channels = self
+            .channels
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("ChannelStore is not set"))?;
+
+        let conn_id = self
+            .id
+            .ok_or_else(|| PyRuntimeError::new_err("connection not established"))?;
+
+        Ok(channels.get_groups(conn_id))
+    }
+
+    fn group_size(&self, group: String) -> PyResult<usize> {
+        let channels = self
+            .channels
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("ChannelStore is not set"))?;
+
+        Ok(channels.group_size(&group))
     }
 }
 
