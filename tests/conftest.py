@@ -1,11 +1,16 @@
+import tempfile
 import threading
 import time
+from pathlib import Path
 
 import django
 import pytest
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from pywsrs import WebsocketServer
+
+# Use a temp file for SQLite so all threads can access it
+_test_db_file = Path(tempfile.gettempdir()) / "pywsrs_test.sqlite3"
 
 
 class RunServer:
@@ -33,7 +38,10 @@ def pytest_configure():
             DATABASES={
                 "default": {
                     "ENGINE": "django.db.backends.sqlite3",
-                    "NAME": ":memory:",
+                    "NAME": str(_test_db_file),
+                    "OPTIONS": {
+                        "timeout": 20,
+                    },
                 }
             },
             INSTALLED_APPS=[
@@ -46,8 +54,37 @@ def pytest_configure():
             SESSION_ENGINE="django.contrib.sessions.backends.db",
             SESSION_COOKIE_NAME="sessionid",
             USE_TZ=True,
+            CACHES={
+                "default": {
+                    "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+                }
+            },
         )
         django.setup()
+
+
+def pytest_unconfigure():
+    """Clean up test database file."""
+    if _test_db_file.exists():
+        _test_db_file.unlink()
+
+
+@pytest.fixture(scope="session")
+def django_db_setup(django_db_blocker):
+    from django.core.management import call_command
+    from django.db import connection
+
+    with django_db_blocker.unblock():
+        call_command("migrate", "--run-syncdb", verbosity=0)
+
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS test_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    content TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
 
 
 @pytest.fixture
@@ -57,30 +94,28 @@ def user_model():
 
 
 @pytest.fixture
-def create_user(user_model):
+def create_user(user_model, django_db_blocker):
     """Factory fixture to create users."""
 
     def _create_user(username="testuser", password="testpass123", **kwargs):
-        return user_model.objects.create_user(username=username, password=password, **kwargs)
+        with django_db_blocker.unblock():
+            return user_model.objects.create_user(username=username, password=password, **kwargs)
 
     return _create_user
 
 
 @pytest.fixture
 def active_user(create_user):
-    """Create an active user."""
     return create_user(username="activeuser", is_active=True)
 
 
 @pytest.fixture
 def inactive_user(create_user):
-    """Create an inactive user."""
     return create_user(username="inactiveuser", is_active=False)
 
 
 @pytest.fixture
 def session_store():
-    """Return the session store class."""
     from django.contrib.sessions.backends.db import SessionStore
 
     return SessionStore
@@ -88,8 +123,6 @@ def session_store():
 
 @pytest.fixture
 def create_session(session_store, active_user):
-    """Factory fixture to create sessions."""
-
     def _create_session(user=None, expired=False):
         user = user or active_user
         session = session_store()
@@ -114,7 +147,6 @@ def create_session(session_store, active_user):
 
 @pytest.fixture
 def websocket_scope():
-    """Factory fixture to create Connection objects."""
     from pywsrs import Connection
 
     def _create_scope(
