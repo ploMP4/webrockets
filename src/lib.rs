@@ -81,6 +81,8 @@ mod pywsrs {
     #[pymodule_export]
     use super::broker::broadcast;
     #[pymodule_export]
+    use super::broker::reset_broadcast;
+    #[pymodule_export]
     use super::broker::setup_broadcast;
     #[pymodule_export]
     use super::connection::BaseConnection;

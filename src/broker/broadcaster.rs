@@ -1,29 +1,45 @@
 use pyo3::types::PyDict;
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
-use std::sync::OnceLock;
+use std::sync::{Arc, RwLock};
 use tokio::runtime::Runtime;
 
 use super::config::BrokerConfig;
 use super::Broker;
 
-static BROADCASTER: OnceLock<Broadcaster> = OnceLock::new();
+static BROADCASTER: RwLock<Option<Arc<Broadcaster>>> = RwLock::new(None);
 
 #[pyfunction]
 pub(crate) fn setup_broadcast(config: &Bound<'_, PyDict>) -> PyResult<()> {
-    let _ =
-        BROADCASTER
-            .set(Broadcaster::new(config).map_err(|e| {
-                PyRuntimeError::new_err(format!("Failed to create runtime: {}", e))
-            })?);
+    let broadcaster = Arc::new(Broadcaster::new(config)?);
+    let mut guard = BROADCASTER
+        .write()
+        .map_err(|e| PyRuntimeError::new_err(format!("Lock poisoned: {}", e)))?;
+    *guard = Some(broadcaster);
     Ok(())
 }
 
 #[pyfunction]
-pub(crate) fn broadcast(py: Python<'_>, groups: Vec<String>, message: String) -> PyResult<()> {
-    let broadcaster = BROADCASTER
-        .get()
-        .ok_or_else(|| PyRuntimeError::new_err("broadcast is not initialized"))?;
+pub(crate) fn reset_broadcast() -> PyResult<()> {
+    let mut guard = BROADCASTER
+        .write()
+        .map_err(|e| PyRuntimeError::new_err(format!("Lock poisoned: {}", e)))?;
+    *guard = None;
+    Ok(())
+}
 
+fn get_broadcaster() -> PyResult<Arc<Broadcaster>> {
+    let guard = BROADCASTER
+        .read()
+        .map_err(|e| PyRuntimeError::new_err(format!("Lock poisoned: {}", e)))?;
+    guard
+        .as_ref()
+        .cloned()
+        .ok_or_else(|| PyRuntimeError::new_err("broadcast is not initialized"))
+}
+
+#[pyfunction]
+pub(crate) fn broadcast(py: Python<'_>, groups: Vec<String>, message: String) -> PyResult<()> {
+    let broadcaster = get_broadcaster()?;
     py.detach(|| broadcaster.send(groups, message))
 }
 
@@ -33,11 +49,10 @@ pub(crate) fn abroadcast(
     groups: Vec<String>,
     message: String,
 ) -> PyResult<Bound<'_, PyAny>> {
-    let broadcaster = BROADCASTER
-        .get()
-        .ok_or_else(|| PyRuntimeError::new_err("broadcast is not initialized"))?;
-
-    pyo3_async_runtimes::tokio::future_into_py(py, broadcaster.asend(groups, message))
+    let broadcaster = get_broadcaster()?;
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        broadcaster.asend(groups, message).await
+    })
 }
 
 #[pyclass]
@@ -64,9 +79,7 @@ impl Broadcaster {
         })
         .to_string()
     }
-}
 
-impl Broadcaster {
     fn send(&self, groups: Vec<String>, message: String) -> PyResult<()> {
         let payload = Self::make_payload(&groups, &message);
         self.rt.block_on(self.broker.send(payload))

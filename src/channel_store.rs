@@ -45,7 +45,7 @@ impl ChannelStore {
     pub(crate) fn leave(&self, conn_id: ConnectionID, group: &str) -> bool {
         self.groups
             .get(group)
-            .map_or(false, |members| members.remove(&conn_id).is_some())
+            .is_some_and(|members| members.remove(&conn_id).is_some())
     }
 
     pub(crate) fn get_groups(&self, conn_id: ConnectionID) -> Vec<String> {

@@ -1,18 +1,21 @@
 import asyncio
 import json
-import threading
-import time
 
 import pytest
 import websockets
 from pywsrs import (
     BrokerConfig,
+    Connection,
     WebsocketServer,
     abroadcast,
     broadcast,
+    reset_broadcast,
     setup_broadcast,
 )
+from testcontainers.rabbitmq import RabbitMqContainer
 from testcontainers.redis import RedisContainer
+
+from .conftest import RunServer
 
 
 @pytest.fixture(scope="module")
@@ -21,111 +24,182 @@ def redis_container():
         yield redis
 
 
-@pytest.fixture(scope="module")
-def redis_ws_server(redis_container):
+@pytest.fixture
+def broker_config(redis_container) -> BrokerConfig:
     redis_url = f"redis://{redis_container.get_container_host_ip()}:{redis_container.get_exposed_port(6379)}"
-
-    broker_config: BrokerConfig = {
+    config: BrokerConfig = {
         "type": "redis",
         "url": redis_url,
         "channel": "ws_test_broadcast",
     }
+    setup_broadcast(config)
+    return config
 
-    setup_broadcast(broker_config)
-    server = WebsocketServer(host="127.0.0.1", port=46391, broker=broker_config)
-    redis_view = server.create_route("ws/redis-test/", "redis-test")
 
-    @redis_view.receive
-    def on_redis_receive(conn, data):
+@pytest.fixture
+def redis_ws_server(broker_config: BrokerConfig) -> WebsocketServer:
+    server = WebsocketServer(broker=broker_config)
+    route = server.create_route("ws/redis-test/", "redis-test")
+
+    @route.receive
+    def on_receive(conn: Connection, data: str | bytes):
         conn.send(f"redis-ack: {data}")
 
-    server_thread = threading.Thread(target=lambda: server.start())
-    server_thread.start()
-    time.sleep(0.5)
-
-    yield {
-        "ws_url": "ws://127.0.0.1:46391",
-        "redis_url": redis_url,
-        "channel": "ws_test_broadcast",
-    }
-
-    server.stop()
-    server_thread.join(timeout=5)
+    return server
 
 
 class TestRedisBroker:
     @pytest.mark.asyncio
-    async def test_redis_broadcaster_send(self, redis_ws_server):
-        async with websockets.connect(f"{redis_ws_server['ws_url']}/ws/redis-test/") as ws:
-            await asyncio.sleep(0.2)
+    async def test_redis_broadcaster_send(self, redis_ws_server: WebsocketServer):
+        with RunServer(redis_ws_server):
+            async with websockets.connect(f"ws://{redis_ws_server.addr()}/ws/redis-test/") as ws:
+                broadcast(
+                    groups=["redis-test"],
+                    message=json.dumps({"type": "test", "data": "hello from redis"}),
+                )
 
-            broadcast(
-                groups=["redis-test"],
-                message=json.dumps({"type": "test", "data": "hello from redis"}),
-            )
-
-            try:
                 response = await asyncio.wait_for(ws.recv(), timeout=2.0)
                 assert "hello from redis" in str(response)
-            except asyncio.TimeoutError:
-                pytest.fail("Did not receive broadcast message within timeout")
 
     @pytest.mark.asyncio
-    async def test_redis_broadcaster_asend(self, redis_ws_server):
-        async with websockets.connect(f"{redis_ws_server['ws_url']}/ws/redis-test/") as ws:
-            await asyncio.sleep(0.2)
+    async def test_redis_broadcaster_asend(self, redis_ws_server: WebsocketServer):
+        with RunServer(redis_ws_server):
+            async with websockets.connect(f"ws://{redis_ws_server.addr()}/ws/redis-test/") as ws:
+                await abroadcast(
+                    groups=["redis-test"],
+                    message=json.dumps({"type": "async_test", "data": "async hello"}),
+                )
 
-            await abroadcast(
-                groups=["redis-test"],
-                message=json.dumps({"type": "async_test", "data": "async hello"}),
-            )
-
-            try:
                 response = await asyncio.wait_for(ws.recv(), timeout=2.0)
                 assert "async hello" in str(response)
-            except asyncio.TimeoutError:
-                pytest.fail("Did not receive async broadcast message within timeout")
 
     @pytest.mark.asyncio
-    async def test_redis_multiple_broadcasts(self, redis_ws_server):
-        async with websockets.connect(f"{redis_ws_server['ws_url']}/ws/redis-test/") as ws:
-            await asyncio.sleep(0.2)
+    async def test_redis_multiple_broadcasts(self, redis_ws_server: WebsocketServer):
+        with RunServer(redis_ws_server):
+            async with websockets.connect(f"ws://{redis_ws_server.addr()}/ws/redis-test/") as ws:
+                messages = ["first", "second", "third"]
+                for msg in messages:
+                    broadcast(groups=["redis-test"], message=msg)
 
-            messages = ["first", "second", "third"]
-            for msg in messages:
-                broadcast(groups=["redis-test"], message=msg)
+                received = []
+                for _ in range(len(messages)):
+                    try:
+                        response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                        received.append(response)
+                    except asyncio.TimeoutError:
+                        break
 
-            received = []
-            for _ in range(len(messages)):
-                try:
-                    response = await asyncio.wait_for(ws.recv(), timeout=2.0)
-                    received.append(response)
-                except asyncio.TimeoutError:
-                    break
-
-            assert len(received) == len(messages)
-            for msg in messages:
-                assert any(msg in r for r in received)
+                assert len(received) == len(messages)
+                for msg in messages:
+                    assert any(msg in r for r in received)
 
     @pytest.mark.asyncio
-    async def test_redis_broadcast_to_multiple_clients(self, redis_ws_server):
-        async with websockets.connect(f"{redis_ws_server['ws_url']}/ws/redis-test/") as ws1:
-            async with websockets.connect(f"{redis_ws_server['ws_url']}/ws/redis-test/") as ws2:
-                await asyncio.sleep(0.2)
+    async def test_redis_broadcast_to_multiple_clients(self, redis_ws_server: WebsocketServer):
+        with RunServer(redis_ws_server):
+            async with websockets.connect(f"ws://{redis_ws_server.addr()}/ws/redis-test/") as ws1:
+                async with websockets.connect(
+                    f"ws://{redis_ws_server.addr()}/ws/redis-test/"
+                ) as ws2:
+                    broadcast(groups=["redis-test"], message="broadcast to all")
 
-                broadcast(groups=["redis-test"], message="broadcast to all")
-
-                try:
                     r1 = await asyncio.wait_for(ws1.recv(), timeout=2.0)
                     r2 = await asyncio.wait_for(ws2.recv(), timeout=2.0)
 
                     assert "broadcast to all" in str(r1)
                     assert "broadcast to all" in str(r2)
-                except asyncio.TimeoutError:
-                    pytest.fail("Not all clients received the broadcast")
+
+
+@pytest.fixture(scope="module")
+def amqp_container():
+    with RabbitMqContainer("rabbitmq:3-alpine") as rabbitmq:
+        yield rabbitmq
+
+
+@pytest.fixture
+def amqp_broker_config(amqp_container) -> BrokerConfig:
+    amqp_url = f"amqp://guest:guest@{amqp_container.get_container_host_ip()}:{amqp_container.get_exposed_port(5672)}"
+    config: BrokerConfig = {
+        "type": "amqp",
+        "url": amqp_url,
+        "exchange": "ws_test_broadcast",
+    }
+    reset_broadcast()
+    setup_broadcast(config)
+    return config
+
+
+@pytest.fixture
+def amqp_ws_server(amqp_broker_config: BrokerConfig) -> WebsocketServer:
+    server = WebsocketServer(broker=amqp_broker_config)
+    route = server.create_route("ws/amqp-test/", "amqp-test")
+
+    @route.receive
+    def on_receive(conn: Connection, data: str | bytes):
+        conn.send(f"amqp-ack: {data}")
+
+    return server
+
+
+class TestAmqpBroker:
+    @pytest.mark.asyncio
+    async def test_amqp_broadcaster_send(self, amqp_ws_server: WebsocketServer):
+        with RunServer(amqp_ws_server):
+            async with websockets.connect(f"ws://{amqp_ws_server.addr()}/ws/amqp-test/") as ws:
+                broadcast(
+                    groups=["amqp-test"],
+                    message=json.dumps({"type": "test", "data": "hello from amqp"}),
+                )
+
+                response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                assert "hello from amqp" in str(response)
+
+    @pytest.mark.asyncio
+    async def test_amqp_broadcaster_asend(self, amqp_ws_server: WebsocketServer):
+        with RunServer(amqp_ws_server):
+            async with websockets.connect(f"ws://{amqp_ws_server.addr()}/ws/amqp-test/") as ws:
+                await abroadcast(
+                    groups=["amqp-test"],
+                    message=json.dumps({"type": "async_test", "data": "async hello"}),
+                )
+
+                response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                assert "async hello" in str(response)
+
+    @pytest.mark.asyncio
+    async def test_amqp_multiple_broadcasts(self, amqp_ws_server: WebsocketServer):
+        with RunServer(amqp_ws_server):
+            async with websockets.connect(f"ws://{amqp_ws_server.addr()}/ws/amqp-test/") as ws:
+                messages = ["first", "second", "third"]
+                for msg in messages:
+                    broadcast(groups=["amqp-test"], message=msg)
+
+                received = []
+                for _ in range(len(messages)):
+                    try:
+                        response = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                        received.append(response)
+                    except asyncio.TimeoutError:
+                        break
+
+                assert len(received) == len(messages)
+                for msg in messages:
+                    assert any(msg in r for r in received)
+
+    @pytest.mark.asyncio
+    async def test_amqp_broadcast_to_multiple_clients(self, amqp_ws_server: WebsocketServer):
+        with RunServer(amqp_ws_server):
+            async with websockets.connect(f"ws://{amqp_ws_server.addr()}/ws/amqp-test/") as ws1:
+                async with websockets.connect(f"ws://{amqp_ws_server.addr()}/ws/amqp-test/") as ws2:
+                    broadcast(groups=["amqp-test"], message="broadcast to all")
+
+                    r1 = await asyncio.wait_for(ws1.recv(), timeout=2.0)
+                    r2 = await asyncio.wait_for(ws2.recv(), timeout=2.0)
+
+                    assert "broadcast to all" in str(r1)
+                    assert "broadcast to all" in str(r2)
 
 
 class TestBroadcasterErrors:
     def test_broadcaster_invalid_type(self):
-        with pytest.raises(RuntimeError, match="unknown broker type"):
+        with pytest.raises(ValueError, match="unknown broker type"):
             setup_broadcast({"type": "invalid"})

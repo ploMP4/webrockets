@@ -182,7 +182,13 @@ def setup_broadcast(config: BrokerConfig) -> None:
     """
     Initialize the broadcaster with a broker configuration.
     Must be called before using broadcast() or abroadcast().
-    Can only be called once per process (uses OnceLock).
+    """
+    ...
+
+def reset_broadcast() -> None:
+    """
+    Reset the broadcaster, allowing setup_broadcast() to be called again.
+    Primarily useful for testing when switching between broker configurations.
     """
     ...
 

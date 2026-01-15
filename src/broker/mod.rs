@@ -5,7 +5,7 @@ pub(crate) mod amqp;
 pub(crate) mod redis;
 
 use async_trait::async_trait;
-pub(crate) use broadcaster::{abroadcast, broadcast, setup_broadcast};
+pub(crate) use broadcaster::{abroadcast, broadcast, reset_broadcast, setup_broadcast};
 use pyo3::PyResult;
 
 use std::sync::Arc;
@@ -35,7 +35,11 @@ pub(crate) struct BrokerMessage {
 
 impl BrokerMessage {
     pub(crate) fn dispatch(self, channels: &ChannelStore) {
-        channels.broadcast(&self.groups, Arc::new(Message::Text(self.message.into())), None);
+        channels.broadcast(
+            &self.groups,
+            Arc::new(Message::Text(self.message.into())),
+            None,
+        );
     }
 }
 
