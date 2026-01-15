@@ -66,7 +66,7 @@ class TestRedisBroker:
 
             try:
                 response = await asyncio.wait_for(ws.recv(), timeout=2.0)
-                assert "hello from redis" in response
+                assert "hello from redis" in str(response)
             except asyncio.TimeoutError:
                 pytest.fail("Did not receive broadcast message within timeout")
 
@@ -119,8 +119,8 @@ class TestRedisBroker:
                     r1 = await asyncio.wait_for(ws1.recv(), timeout=2.0)
                     r2 = await asyncio.wait_for(ws2.recv(), timeout=2.0)
 
-                    assert "broadcast to all" in r1
-                    assert "broadcast to all" in r2
+                    assert "broadcast to all" in str(r1)
+                    assert "broadcast to all" in str(r2)
                 except asyncio.TimeoutError:
                     pytest.fail("Not all clients received the broadcast")
 

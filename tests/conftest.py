@@ -1,8 +1,28 @@
+import threading
+import time
+
 import django
 import pytest
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from pywsrs import WebsocketServer
+
+
+class RunServer:
+    def __init__(self, server: WebsocketServer) -> None:
+        self._server = server
+
+    def __enter__(self):
+        self._thread = threading.Thread(target=self._server.start)
+        self._thread.start()
+        time.sleep(0.1)
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self._server.stop()
+        self._thread.join(timeout=5)
+        if self._thread.is_alive():
+            raise RuntimeError("WebSocket server did not shut down cleanly")
 
 
 def pytest_configure():
