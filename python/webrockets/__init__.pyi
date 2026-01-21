@@ -9,7 +9,7 @@ from typing import (
     overload,
 )
 
-from pywsrs.auth import BaseAuthentication
+from webrockets.auth import BaseAuthentication
 
 if TYPE_CHECKING:
     from pydantic import BaseModel

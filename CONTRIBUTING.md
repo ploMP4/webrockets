@@ -1,6 +1,6 @@
 # Contributing
 
-All contributions are welcome! Whether it's bug fixes, new features, documentation improvements, or bug reports - we appreciate your help in making pywsrs better.
+All contributions are welcome! Whether it's bug fixes, new features, documentation improvements, or bug reports - we appreciate your help in making webrockets better.
 
 ## Performance
 
@@ -18,8 +18,8 @@ This project cares a lot about performance. The core server is written in Rust s
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/ploMP4/pywsrs.git
-   cd pywsrs
+   git clone https://github.com/ploMP4/webrockets.git
+   cd webrockets
    ```
 
 2. **Install dependencies:**
@@ -70,7 +70,7 @@ ruff format --check .
 
 ## Before You Start
 
-For **big features**, **breaking changes**, or if you're **unsure** about the approach, please [open an issue](https://github.com/ploMP4/pywsrs/issues) first so it can be discussed. This helps ensure your contribution aligns with the project's direction and saves you time if changes are needed.
+For **big features**, **breaking changes**, or if you're **unsure** about the approach, please [open an issue](https://github.com/ploMP4/webrockets/issues) first so it can be discussed. This helps ensure your contribution aligns with the project's direction and saves you time if changes are needed.
 
 For smaller bug fixes and improvements, feel free to submit a pull request directly.
 

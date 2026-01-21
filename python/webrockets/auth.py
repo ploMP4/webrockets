@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from pywsrs import IncomingConnection
+from webrockets import IncomingConnection
 
 
 class AuthenticationFailed(Exception):

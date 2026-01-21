@@ -110,7 +110,7 @@
 ><tspan x="0" y="7.199999999999999">fastapi</tspan></text></g>
 <g stroke="none" fill="#666" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-2)" >
 <text style="font:normal 12px &apos;Helvetica Neue&apos;, &apos;Helvetica&apos;, &apos;Arial&apos;, sans-serif;" text-anchor="middle" dominant-baseline="middle" transform="matrix(1 0 0 1 676 366.6)" 
-><tspan x="0" y="7.199999999999999">pywsrs</tspan></text></g>
+><tspan x="0" y="7.199999999999999">webrockets</tspan></text></g>
 <g stroke="rgb(0,0,0)" stroke-width="1" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="4" stroke-opacity="0.1" fill="none">
 <path d="M 32.5,32 L 32.5,356" />
 </g>

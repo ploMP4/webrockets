@@ -1,8 +1,8 @@
-# pywsrs
+# Webrockets
 
-[![PyPI](https://img.shields.io/pypi/v/pywsrs.svg)](https://pypi.org/project/pywsrs/)
-[![Python](https://img.shields.io/pypi/pyversions/pywsrs.svg)](https://pypi.org/project/pywsrs/)
-[![License](https://img.shields.io/pypi/l/pywsrs.svg)](https://github.com/kartofe/pywsrs/blob/main/LICENSE.md)
+[![PyPI](https://img.shields.io/pypi/v/webrockets.svg)](https://pypi.org/project/webrockets/)
+[![Python](https://img.shields.io/pypi/pyversions/webrockets.svg)](https://pypi.org/project/webrockets/)
+[![License](https://img.shields.io/pypi/l/webrockets.svg)](https://github.com/ploMP4/webrockets/blob/main/LICENSE.md)
 
 A high-performance WebSocket server for Python, with first-class Django support. The core server is implemented in Rust using PyO3 for maximum performance.
 
@@ -18,22 +18,22 @@ A high-performance WebSocket server for Python, with first-class Django support.
 
 ```bash
 # Basic installation
-pip install pywsrs
+pip install webrockets
 
 # With Django integration
-pip install pywsrs[django]
+pip install webrockets[django]
 
 # With Pydantic schema validation
-pip install pywsrs[schema]
+pip install webrockets[schema]
 
 # All extras
-pip install pywsrs[schema,django]
+pip install webrockets[schema,django]
 ```
 
 ## Quick Start
 
 ```python
-from pywsrs import WebsocketServer
+from webrockets import WebsocketServer
 
 # Create a WebSocket server
 server = WebsocketServer(host="0.0.0.0", port=8080)
@@ -59,16 +59,16 @@ server.start()
 
 ## Django Integration
 
-pywsrs provides seamless Django integration with built-in authentication support.
+webrockets provides seamless Django integration with built-in authentication support.
 
 ### Setup
 
-Add `pywsrs` to your `INSTALLED_APPS`:
+Add `webrockets` to your `INSTALLED_APPS`:
 
 ```python
 INSTALLED_APPS = [
     ...
-    "pywsrs",
+    "webrockets",
 ]
 ```
 
@@ -84,8 +84,8 @@ Create your WebSocket routes in a `websockets.py` file in any of your Django app
 
 ```python
 # myapp/websockets.py
-from pywsrs.django import server
-from pywsrs.django.auth import SessionAuthentication
+from webrockets.django import server
+from webrockets.django.auth import SessionAuthentication
 
 chat = server.create_route(
     "ws/chat/",
@@ -114,11 +114,11 @@ python manage.py runwebsockets
 
 ### Authentication Classes
 
-pywsrs includes several authentication classes following Django REST Framework patterns:
+webrockets includes several authentication classes following Django REST Framework patterns:
 
 ```python
-from pywsrs.django import server
-from pywsrs.django.auth import (
+from webrockets.django import server
+from webrockets.django.auth import (
     SessionAuthentication,       # Django session-based auth
     CookieTokenAuthentication,   # Token from cookie
     HeaderTokenAuthentication,   # Token from header
@@ -145,7 +145,7 @@ Route messages based on JSON fields using the `Match` class:
 
 ```python
 from pydantic import BaseModel
-from pywsrs import Match, WebsocketServer
+from webrockets import Match, WebsocketServer
 
 class ChatMessage(BaseModel):
     type: str
@@ -246,7 +246,7 @@ def on_chat(conn, data):
 Broadcast messages to all clients in a group:
 
 ```python
-from pywsrs import WebsocketServer
+from webrockets import WebsocketServer
 
 server = WebsocketServer()
 chat = server.create_route("ws/chat/", "chat")
@@ -265,7 +265,7 @@ def on_message(conn, data):
 For multi-server deployments, configure a message broker:
 
 ```python
-from pywsrs import setup_broadcast, broadcast
+from webrockets import setup_broadcast, broadcast
 
 # Redis
 setup_broadcast({"type": "redis", "url": "redis://localhost:6379"})
@@ -308,12 +308,12 @@ async def on_message(conn, data):
 
 ## Logging
 
-pywsrs uses Python's standard logging module. Logs are emitted to the following loggers:
+webrockets uses Python's standard logging module. Logs are emitted to the following loggers:
 
-- `pywsrs` - Root logger for all pywsrs logs
-- `pywsrs.server` - Server startup, shutdown, and connection errors
-- `pywsrs.broker.redis` - Redis broker connection and message logs
-- `pywsrs.broker.amqp` - RabbitMQ broker connection and message logs
+- `webrockets` - Root logger for all webrockets logs
+- `webrockets.server` - Server startup, shutdown, and connection errors
+- `webrockets.broker.redis` - Redis broker connection and message logs
+- `webrockets.broker.amqp` - RabbitMQ broker connection and message logs
 
 ### Django
 
@@ -335,7 +335,7 @@ LOGGING = {
         },
     },
     "loggers": {
-        "pywsrs": {
+        "webrockets": {
             "handlers": ["console"],
             "level": "INFO",
         },
@@ -349,14 +349,14 @@ For standalone scripts, configure logging before starting the server:
 
 ```python
 import logging
-from pywsrs import WebsocketServer
+from webrockets import WebsocketServer
 
 # Simple configuration
 logging.basicConfig(level=logging.INFO)
 
-# Or configure just pywsrs
-logging.getLogger("pywsrs").setLevel(logging.INFO)
-logging.getLogger("pywsrs").addHandler(logging.StreamHandler())
+# Or configure just webrockets
+logging.getLogger("webrockets").setLevel(logging.INFO)
+logging.getLogger("webrockets").addHandler(logging.StreamHandler())
 
 server = WebsocketServer()
 # ... configure routes ...
@@ -365,7 +365,7 @@ server.start()
 
 ### structlog
 
-pywsrs works with structlog since it uses standard Python logging:
+webrockets works with structlog since it uses standard Python logging:
 
 ```python
 import logging
@@ -384,6 +384,6 @@ structlog.configure(
     logger_factory=structlog.stdlib.LoggerFactory(),
 )
 
-# Configure pywsrs to use structlog's logging
-logging.getLogger("pywsrs").setLevel(logging.INFO)
+# Configure webrockets to use structlog's logging
+logging.getLogger("webrockets").setLevel(logging.INFO)
 ```

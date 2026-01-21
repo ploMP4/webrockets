@@ -3,13 +3,13 @@ import logging
 
 if importlib.util.find_spec("django") is None:
     raise ImportError(
-        'Django is required to use runwebsockets command. Install with: pip install "pywsrs[django]"'
+        'Django is required to use runwebsockets command. Install with: pip install "webrockets[django]"'
     )
 
 from django.core.management.base import BaseCommand
 from django.utils.module_loading import autodiscover_modules
 
-from pywsrs.django import server
+from webrockets.django import server
 
 LOG_LEVELS = {
     "debug": logging.DEBUG,
@@ -21,7 +21,7 @@ LOG_LEVELS = {
 
 
 class Command(BaseCommand):
-    help = "Start the pywsrs WebSocket server"
+    help = "Start the webrockets WebSocket server"
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -29,13 +29,13 @@ class Command(BaseCommand):
             type=str,
             choices=LOG_LEVELS.keys(),
             default=None,
-            help="Set the log level for pywsrs (debug, info, warning, error, critical)",
+            help="Set the log level for webrockets (debug, info, warning, error, critical)",
         )
 
     def handle(self, *args, **options):
         if options["log_level"]:
             level = LOG_LEVELS[options["log_level"]]
-            logger = logging.getLogger("pywsrs")
+            logger = logging.getLogger("webrockets")
             logger.setLevel(level)
             if not logger.handlers:
                 handler = logging.StreamHandler()

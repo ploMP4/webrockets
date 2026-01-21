@@ -26,11 +26,11 @@ console.log(`Running benchmarks for route: ${path}`);
 const targets = [
     {
         port: 6969,
-        name: "pywsrs",
+        name: "webrockets",
     },
     // {
     //     port: 6970,
-    //     name: "pywsrs-django",
+    //     name: "webrockets-django",
     // },
     {
         port: 8000,

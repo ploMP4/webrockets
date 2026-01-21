@@ -1,4 +1,4 @@
-"""pywsrs with Django ORM benchmark server."""
+"""webrockets with Django ORM benchmark server."""
 
 import hashlib
 import json
@@ -10,11 +10,14 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "settings")
 sys.path.insert(0, os.path.dirname(__file__))
 
 import django
+from django.db import connection
+from models import Message
+from webrockets import Connection
+from webrockets.django import server
 
 django.setup()
 
 # Create the table if it doesn't exist
-from django.db import connection
 
 with connection.cursor() as cursor:
     cursor.execute("""
@@ -24,10 +27,6 @@ with connection.cursor() as cursor:
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-
-from models import Message
-from pywsrs import Connection
-from pywsrs.django import server
 
 
 def db_operation(data: str | bytes) -> str:

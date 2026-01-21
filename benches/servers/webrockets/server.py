@@ -1,11 +1,11 @@
-"""pywsrs standalone benchmark server with echo, db, and compute routes."""
+"""webrockets standalone benchmark server with echo, db, and compute routes."""
 
 import hashlib
 import json
 import sqlite3
 from pathlib import Path
 
-from pywsrs import Connection, WebsocketServer
+from webrockets import Connection, WebsocketServer
 
 DB_PATH = Path("/tmp/bench.db")
 

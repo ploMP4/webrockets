@@ -4,8 +4,8 @@ import json
 import pytest
 import websockets
 from django.db import models
-from pywsrs import Connection, WebsocketServer
-from pywsrs.django.auth import SessionAuthentication
+from webrockets import Connection, WebsocketServer
+from webrockets.django.auth import SessionAuthentication
 from websockets.sync.client import connect as connect_sync
 
 from .conftest import RunServer

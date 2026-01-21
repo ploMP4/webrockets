@@ -6,8 +6,8 @@ Benchmark suite for comparing WebSocket server implementations in Python.
 
 | Server | Port | Description |
 |--------|------|-------------|
-| pywsrs | 6969 | Rust-powered WebSocket server (standalone) |
-| pywsrs-django | 6970 | pywsrs with Django ORM integration |
+| webrockets | 6969 | Rust-powered WebSocket server (standalone) |
+| webrockets-django | 6970 | webrockets with Django ORM integration |
 | django-channels | 8000 | Django Channels with Daphne ASGI |
 | fastapi | 1234 | FastAPI with uvicorn |
 | django-bolt | 1235 | Django-Bolt async framework |
@@ -23,14 +23,14 @@ Each server exposes three endpoints for different benchmark scenarios:
 
 ## Quick Start
 
-### 1. Build pywsrs wheel
+### 1. Build webrockets wheel
 
 ```bash
 # From repo root
 maturin build --release
 
 # Copy wheel to benches
-cp target/wheels/pywsrs-*.whl benches/wheels/
+cp target/wheels/webrockets-*.whl benches/wheels/
 ```
 
 ### 2. Build the benchmark client
@@ -66,10 +66,10 @@ deno run --allow-all run.js compute
 Test individual servers with websocat:
 
 ```bash
-# pywsrs
+# webrockets
 echo "hello" | websocat ws://localhost:6969/echo
 
-# pywsrs-django
+# webrockets-django
 echo "hello" | websocat ws://localhost:6970/echo
 
 # django-channels
@@ -118,14 +118,14 @@ To add a new route type (e.g., `/auth`):
 ```
 benches/
 ├── servers/
-│   ├── pywsrs/          # Standalone pywsrs server
-│   ├── pywsrs-django/   # pywsrs with Django ORM
+│   ├── webrockets/          # Standalone webrockets server
+│   ├── webrockets-django/   # webrockets with Django ORM
 │   ├── channels/        # Django Channels
 │   ├── fastapi/         # FastAPI
 │   ├── bolt/            # Django-Bolt
 │   └── websockets/      # Pure Python websockets
-├── wheels/              # Local pywsrs wheel (not committed)
-│   └── pywsrs-*.whl
+├── wheels/              # Local webrockets wheel (not committed)
+│   └── webrockets-*.whl
 ├── docker-compose.yml   # All servers
 ├── load_test.c          # C benchmark client
 ├── load_test            # Compiled binary

@@ -1,5 +1,5 @@
 services:
-  pywsrs:
+  webrockets:
     network_mode: host
     ulimits:
       nofile:
@@ -7,10 +7,10 @@ services:
         hard: 1048576
     build:
       context: .
-      dockerfile: servers/pywsrs/Dockerfile
+      dockerfile: servers/webrockets/Dockerfile
     restart: unless-stopped
 
-  pywsrs-django:
+  webrockets-django:
     network_mode: host
     ulimits:
       nofile:
@@ -18,7 +18,7 @@ services:
         hard: 1048576
     build:
       context: .
-      dockerfile: servers/pywsrs-django/Dockerfile
+      dockerfile: servers/webrockets-django/Dockerfile
     restart: unless-stopped
 
   channels:

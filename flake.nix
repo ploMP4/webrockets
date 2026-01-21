@@ -1,5 +1,5 @@
 {
-  description = "pywsrs development environment";
+  description = "webrockets development environment";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -17,7 +17,7 @@
         in
         {
           default = pkgs.mkShell {
-            name = "pywsrs";
+            name = "webrockets";
 
             buildInputs = with pkgs; [
               rustc
@@ -29,6 +29,7 @@
               deno
               docker
               docker-compose
+              pnpm
             ];
 
             shellHook = ''

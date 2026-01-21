@@ -1,4 +1,4 @@
-from pywsrs import Connection
+from webrockets import Connection
 
 
 class TestConnectionCreation:

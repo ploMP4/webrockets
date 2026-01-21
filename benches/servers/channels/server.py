@@ -10,12 +10,12 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "settings")
 sys.path.insert(0, os.path.dirname(__file__))
 
 import django
-
-django.setup()
-
 from channels.generic.websocket import WebsocketConsumer
 from channels.routing import ProtocolTypeRouter, URLRouter
 from django.urls import path
+
+django.setup()
+
 
 DB_PATH = "/tmp/bench_channels.db"
 

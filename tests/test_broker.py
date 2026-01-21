@@ -3,7 +3,9 @@ import json
 
 import pytest
 import websockets
-from pywsrs import (
+from testcontainers.rabbitmq import RabbitMqContainer
+from testcontainers.redis import RedisContainer
+from webrockets import (
     BrokerConfig,
     Connection,
     WebsocketServer,
@@ -12,8 +14,6 @@ from pywsrs import (
     reset_broadcast,
     setup_broadcast,
 )
-from testcontainers.rabbitmq import RabbitMqContainer
-from testcontainers.redis import RedisContainer
 
 from .conftest import RunServer
 

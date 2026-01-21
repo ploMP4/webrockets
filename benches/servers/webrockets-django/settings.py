@@ -1,4 +1,4 @@
-"""Minimal Django settings for pywsrs benchmark server."""
+"""Minimal Django settings for webrockets benchmark server."""
 
 from pathlib import Path
 
@@ -10,7 +10,7 @@ ALLOWED_HOSTS = ["*"]
 
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
-    "pywsrs",
+    "webrockets",
 ]
 
 DATABASES = {

@@ -1,10 +1,10 @@
 import importlib.util
 
-from pywsrs import WebsocketServer
+from webrockets import WebsocketServer
 
 if importlib.util.find_spec("django") is None:
     raise ImportError(
-        'Django is required for pywsrs.django. Install with: pip install "pywsrs[django]"'
+        'Django is required for webrockets.django. Install with: pip install "webrockets[django]"'
     )
 
 from django.conf import settings

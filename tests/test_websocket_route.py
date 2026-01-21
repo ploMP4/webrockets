@@ -1,6 +1,6 @@
 import pytest
-from pywsrs import Connection
-from pywsrs.auth import BaseAuthentication
+from webrockets import Connection
+from webrockets.auth import BaseAuthentication
 
 
 class TestSocketViewCreation:

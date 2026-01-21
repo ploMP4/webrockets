@@ -1,4 +1,4 @@
-from pywsrs import Connection, WebsocketServer
+from webrockets import Connection, WebsocketServer
 
 server = WebsocketServer()
 

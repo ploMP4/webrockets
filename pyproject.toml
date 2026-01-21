@@ -3,7 +3,7 @@ requires = ["maturin>=1.9,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "pywsrs"
+name = "webrockets"
 requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Rust",
@@ -64,4 +64,4 @@ indent-style = "space"
 
 [tool.ruff.lint.per-file-ignores]
 # Star imports are intentional for re-exporting Rust bindings
-"python/pywsrs/__init__.py" = ["F403", "F405"]
+"python/webrockets/__init__.py" = ["F403", "F405"]

@@ -1,7 +1,7 @@
 from typing import Any
 
-from pywsrs import IncomingConnection
-from pywsrs.auth import BaseAuthentication
+from webrockets import IncomingConnection
+from webrockets.auth import BaseAuthentication
 
 class SessionAuthentication(BaseAuthentication):
     def __init__(self, session_cookie_name: str | None = None) -> None: ...

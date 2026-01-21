@@ -8,7 +8,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 COPY wheels/*.whl /tmp/
 RUN uv pip install --system /tmp/*.whl django && rm /tmp/*.whl
 
-COPY servers/pywsrs-django/settings.py servers/pywsrs-django/models.py servers/pywsrs-django/server.py ./
+COPY servers/webrockets-django/settings.py servers/webrockets-django/models.py servers/webrockets-django/server.py ./
 
 EXPOSE 6970
 

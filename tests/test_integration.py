@@ -4,7 +4,7 @@ import json
 import pytest
 import websockets
 from pydantic import BaseModel
-from pywsrs import Connection, IncomingConnection, Match, WebsocketServer
+from webrockets import Connection, IncomingConnection, Match, WebsocketServer
 
 from .conftest import RunServer
 

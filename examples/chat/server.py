@@ -9,8 +9,8 @@ import logging
 from typing import Annotated, Any, Literal, cast
 
 from pydantic import BaseModel, StringConstraints
-from pywsrs import Connection, IncomingConnection, Match, WebsocketServer
-from pywsrs.auth import AuthenticationFailed, BaseAuthentication
+from webrockets import Connection, IncomingConnection, Match, WebsocketServer
+from webrockets.auth import AuthenticationFailed, BaseAuthentication
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 

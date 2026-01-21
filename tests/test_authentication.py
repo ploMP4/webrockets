@@ -1,6 +1,6 @@
 import pytest
-from pywsrs.auth import AuthenticationFailed
-from pywsrs.django.auth import (
+from webrockets.auth import AuthenticationFailed
+from webrockets.django.auth import (
     CookieTokenAuthentication,
     HeaderTokenAuthentication,
     QueryStringTokenAuthentication,

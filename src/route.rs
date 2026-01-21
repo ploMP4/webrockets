@@ -304,7 +304,7 @@ impl ReceiveDecorator {
         if let Some(schema) = &self.schema {
             if !schema.bind(py).hasattr("model_validate_json")? {
                 return Err(PyTypeError::new_err(
-                    "schema must be a Pydantic model. Install pywsrs[schema] for Pydantic support.",
+                    "schema must be a Pydantic model. Install webrockets[schema] for Pydantic support.",
                 ));
             }
         }

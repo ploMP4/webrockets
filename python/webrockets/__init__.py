@@ -1,7 +1,7 @@
 # ruff: noqa: E402, I001
-# Import order matters: pywsrs must be imported first to avoid circular imports
+# Import order matters: webrockets must be imported first to avoid circular imports
 from typing import Literal, TypedDict
-from .pywsrs import *
+from .webrockets import *
 from .utils import noop
 from .auth import BaseAuthentication
 
@@ -30,6 +30,6 @@ BrokerConfig = RedisBrokerConfig | AmqpBrokerConfig
 
 __all__ = ["noop", "BaseAuthentication", "BrokerConfig"]
 
-__doc__ = pywsrs.__doc__
-if hasattr(pywsrs, "__all__"):
-    __all__ += pywsrs.__all__
+__doc__ = webrockets.__doc__
+if hasattr(webrockets, "__all__"):
+    __all__ += webrockets.__all__

@@ -10,10 +10,9 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "settings")
 sys.path.insert(0, os.path.dirname(__file__))
 
 import django
+from django_bolt import BoltAPI, WebSocket, WebSocketDisconnect
 
 django.setup()
-
-from django_bolt import BoltAPI, WebSocket, WebSocketDisconnect
 
 api = BoltAPI()
 

@@ -6,8 +6,8 @@ from django.conf import settings
 from django.contrib import auth
 from django.utils.module_loading import import_string
 
-from pywsrs import IncomingConnection
-from pywsrs.auth import AuthenticationFailed, BaseAuthentication
+from webrockets import IncomingConnection
+from webrockets.auth import AuthenticationFailed, BaseAuthentication
 
 
 class SessionAuthentication(BaseAuthentication):

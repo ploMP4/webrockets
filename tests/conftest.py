@@ -7,10 +7,10 @@ import django
 import pytest
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from pywsrs import WebsocketServer
+from webrockets import WebsocketServer
 
 # Use a temp file for SQLite so all threads can access it
-_test_db_file = Path(tempfile.gettempdir()) / "pywsrs_test.sqlite3"
+_test_db_file = Path(tempfile.gettempdir()) / "webrockets_test.sqlite3"
 
 
 class RunServer:
@@ -48,7 +48,7 @@ def pytest_configure():
                 "django.contrib.contenttypes",
                 "django.contrib.auth",
                 "django.contrib.sessions",
-                "pywsrs",
+                "webrockets",
             ],
             SECRET_KEY="test-secret-key-for-testing-only",
             SESSION_ENGINE="django.contrib.sessions.backends.db",
@@ -147,7 +147,7 @@ def create_session(session_store, active_user):
 
 @pytest.fixture
 def websocket_scope():
-    from pywsrs import Connection
+    from webrockets import Connection
 
     def _create_scope(
         path="/ws/test/",
