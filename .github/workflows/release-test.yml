@@ -4,18 +4,21 @@ on:
   workflow_dispatch:
   push:
     tags:
-      - "v*-test"
-      - "v*-rc*"
+      - "test-*"
 
 permissions:
   contents: read
 
 jobs:
   linux:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.platform.runner }}
     strategy:
       matrix:
-        target: [x86_64, aarch64]
+        platform:
+          - runner: ubuntu-latest
+            target: x86_64
+          - runner: ubuntu-24.04-arm
+            target: aarch64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -24,22 +27,25 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          target: ${{ matrix.target }}
-          args: --release --out dist --interpreter 3.9 3.10 3.11 3.12 3.13
-          sccache: 'true'
+          target: ${{ matrix.platform.target }}
+          args: -i ${{ matrix.interpreter || '3.9 3.10 3.11 3.12 3.13 pypy3.11' }} --release --out dist
+          sccache: "true"
           manylinux: auto
-          docker-options: -e CI
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-linux-${{ matrix.target }}
+          name: wheels-linux-${{ matrix.platform.target }}
           path: dist
 
   musllinux:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.platform.runner }}
     strategy:
       matrix:
-        target: [x86_64, aarch64]
+        platform:
+          - runner: ubuntu-latest
+            target: x86_64
+          - runner: ubuntu-24.04-arm
+            target: aarch64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -48,15 +54,14 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
-          target: ${{ matrix.target }}
-          args: --release --out dist --interpreter 3.9 3.10 3.11 3.12 3.13
-          sccache: 'true'
+          target: ${{ matrix.platform.target }}
+          args: -i ${{ matrix.interpreter || '3.9 3.10 3.11 3.12 3.13 pypy3.11' }} --release --out dist
+          sccache: "true"
           manylinux: musllinux_1_2
-          docker-options: -e CI
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-musllinux-${{ matrix.target }}
+          name: wheels-musllinux-${{ matrix.platform.target }}
           path: dist
 
   windows:
@@ -86,9 +91,7 @@ jobs:
     strategy:
       matrix:
         platform:
-          - runner: macos-13
-            target: x86_64
-          - runner: macos-14
+          - runner: macos-latest
             target: aarch64
     steps:
       - uses: actions/checkout@v4
