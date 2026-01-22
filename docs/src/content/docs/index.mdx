@@ -1,0 +1,67 @@
+---
+title: Webrockets
+description: High-performance WebSocket server for Python with first-class Django support.
+template: splash
+hero:
+  tagline: A Rust-powered WebSocket server for Python applications
+  actions:
+    - text: Get Started
+      link: /guides/introduction/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/ploMP4/webrockets
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Features
+
+<CardGrid stagger>
+  <Card title="Blazing Fast" icon="rocket">
+    Core server written in Rust using axum and fastwebsockets for maximum performance.
+  </Card>
+  <Card title="Django Integration" icon="puzzle">
+    Built-in authentication classes and management commands for seamless Django integration.
+  </Card>
+  <Card title="Pattern Matching" icon="seti:json">
+    Route messages based on JSON fields with optional Pydantic validation.
+  </Card>
+  <Card title="Broadcasting" icon="approve-check-circle">
+    Built-in support for Redis and RabbitMQ message brokers for multi-server deployments.
+  </Card>
+</CardGrid>
+
+## Quick Example
+
+```python
+from webrockets import WebsocketServer, Connection
+
+server = WebsocketServer(host="0.0.0.0", port=8080)
+chat = server.create_route("ws/chat/", "chat")
+
+@chat.receive
+def on_message(conn: Connection, data: str | bytes):
+    conn.send(f"You said: {data}")
+    conn.broadcast(["chat"], data)
+
+if __name__ == "__main__":
+	server.start()
+```
+
+## Installation
+
+```bash
+# Basic installation
+pip install webrockets
+
+# With Django integration
+pip install webrockets[django]
+
+# With Pydantic schema validation
+pip install webrockets[schema]
+
+# All extras
+pip install webrockets[schema,django]
+```
