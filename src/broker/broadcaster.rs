@@ -1,7 +1,7 @@
 use pyo3::types::PyDict;
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use std::sync::{Arc, RwLock};
-use tokio::runtime::Runtime;
+use tokio::runtime::{Handle, Runtime};
 
 use super::config::BrokerConfig;
 use super::Broker;
@@ -82,7 +82,11 @@ impl Broadcaster {
 
     fn send(&self, groups: Vec<String>, message: String) -> PyResult<()> {
         let payload = Self::make_payload(&groups, &message);
-        self.rt.block_on(self.broker.send(payload))
+        if let Ok(handle) = Handle::try_current() {
+            tokio::task::block_in_place(|| handle.block_on(self.broker.send(payload)))
+        } else {
+            self.rt.block_on(self.broker.send(payload))
+        }
     }
 
     async fn asend(&self, groups: Vec<String>, message: String) -> PyResult<()> {

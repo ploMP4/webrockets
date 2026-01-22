@@ -108,6 +108,22 @@ class TestRedisBroker:
                     assert "broadcast to all" in str(r1)
                     assert "broadcast to all" in str(r2)
 
+    @pytest.mark.asyncio
+    async def test_redis_broadcast_works_from_handler(self, redis_ws_server: WebsocketServer):
+        route = redis_ws_server.create_route("ws/redis-test-broadcast/", "redis-test")
+
+        @route.receive
+        def on_receive(conn: Connection, data: str | bytes):
+            broadcast(groups=["redis-test"], message="broadcast to all")
+
+        with RunServer(redis_ws_server):
+            async with websockets.connect(
+                f"ws://{redis_ws_server.addr()}/ws/redis-test-broadcast/"
+            ) as ws:
+                await ws.send("hi")
+                r = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                assert "broadcast to all" in str(r)
+
 
 @pytest.fixture(scope="module")
 def amqp_container():
