@@ -203,7 +203,7 @@ impl WebsocketRoute {
     pub(crate) fn frozen_handlers(&self) -> FrozenHandlers {
         self.receive_handlers
             .get_or_init(|| {
-                let guard = self.receive_handlers_mut.read().unwrap();
+                let guard = self.receive_handlers_mut.read().expect("Poisoned lock");
                 Arc::new(guard.clone())
             })
             .clone()

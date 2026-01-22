@@ -3,6 +3,7 @@ use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::{routing::get, Router};
 use fastwebsockets::{upgrade, Frame, OpCode, WebSocketError};
+use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::borrow::Cow;
@@ -105,7 +106,7 @@ impl WebsocketServer {
 
             let listener = tokio::net::TcpListener::bind(format!("{}:{}", self.host, self.port))
                 .await
-                .unwrap();
+                .map_err(|e| PyRuntimeError::new_err(format!("Unable to start server: {e}")))?;
 
             log::info!("listening on {}", listener.local_addr().unwrap());
 
@@ -121,10 +122,8 @@ impl WebsocketServer {
                     }
                 })
                 .await
-                .unwrap();
-        });
-
-        Ok(())
+                .map_err(|e| PyRuntimeError::new_err(format!("Unable to start server: {e}")))
+        })
     }
 
     fn authenticated(
