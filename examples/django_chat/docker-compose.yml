@@ -1,0 +1,38 @@
+version: "3.8"
+
+services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - django
+      - websocket
+
+  django:
+    build: .
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             gunicorn myproject.wsgi:application --bind 0.0.0.0:8000 --workers 2"
+    environment:
+      - DJANGO_SETTINGS_MODULE=myproject.settings
+      - REDIS_URL=redis://redis:6379
+      - SECRET_KEY=example-secret-key
+      - DEBUG=true
+    depends_on:
+      - redis
+
+  websocket:
+    build: .
+    command: python manage.py runwebsockets --log-level info
+    environment:
+      - DJANGO_SETTINGS_MODULE=myproject.settings
+      - REDIS_URL=redis://redis:6379
+      - SECRET_KEY=example-secret-key
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine

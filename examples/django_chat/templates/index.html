@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>webrockets Django Chat Example</title>
+    <style>
+        :root {
+            --accent-color: #14b8a6;
+            --accent-hover: #0d9488;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background: #16213e;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #0f3460;
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            color: var(--accent-color);
+        }
+
+        header p {
+            color: #888;
+            font-size: 0.9rem;
+            margin-top: 0.25rem;
+        }
+
+        .container {
+            display: flex;
+            flex: 1;
+            max-height: calc(100vh - 80px);
+        }
+
+        .sidebar {
+            width: 280px;
+            background: #16213e;
+            padding: 1.5rem;
+            border-right: 1px solid #0f3460;
+        }
+
+        .sidebar h2 {
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            color: #888;
+            margin-bottom: 1rem;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.85rem;
+            color: #aaa;
+            margin-bottom: 0.5rem;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #0f3460;
+            border-radius: 6px;
+            background: #1a1a2e;
+            color: #eee;
+            font-size: 0.95rem;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--accent-color);
+        }
+
+        button {
+            width: 100%;
+            padding: 0.75rem;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--accent-color);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-hover);
+        }
+
+        .btn-secondary {
+            background: #0f3460;
+            color: #eee;
+            margin-top: 0.5rem;
+        }
+
+        .btn-secondary:hover {
+            background: #1a4a7a;
+        }
+
+        .status {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            background: #1a1a2e;
+            border-radius: 6px;
+            font-size: 0.85rem;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 0.5rem;
+        }
+
+        .status-connected {
+            background: #4ade80;
+        }
+
+        .status-disconnected {
+            background: #f87171;
+        }
+
+        .main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 1.5rem;
+        }
+
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            background: #16213e;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+
+        .message {
+            margin-bottom: 1rem;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            max-width: 80%;
+        }
+
+        .message-system {
+            background: #0f3460;
+            color: #888;
+            font-size: 0.85rem;
+            max-width: 100%;
+            text-align: center;
+        }
+
+        .message-user {
+            background: var(--accent-color);
+            margin-left: auto;
+        }
+
+        .message-other {
+            background: #1a1a2e;
+        }
+
+        .message-sender {
+            font-size: 0.8rem;
+            color: rgba(255, 255, 255, 0.85);
+            margin-bottom: 0.25rem;
+        }
+
+        .message-api {
+            background: #7c3aed;
+        }
+
+        .input-area {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .input-area input {
+            flex: 1;
+            padding: 1rem;
+            border: 1px solid #0f3460;
+            border-radius: 8px;
+            background: #16213e;
+            color: #eee;
+            font-size: 1rem;
+        }
+
+        .input-area input:focus {
+            outline: none;
+            border-color: var(--accent-color);
+        }
+
+        .input-area button {
+            width: auto;
+            padding: 1rem 2rem;
+        }
+
+        .api-section {
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid #0f3460;
+        }
+
+        .api-section h2 {
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            color: #888;
+            margin-bottom: 1rem;
+        }
+
+        .api-section p {
+            font-size: 0.8rem;
+            color: #666;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>webrockets Django Chat</h1>
+        <p>Real-time chat with Django integration and Redis broadcasting</p>
+    </header>
+
+    <div class="container">
+        <aside class="sidebar">
+            <h2>Join Chat</h2>
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" placeholder="Enter your name" value="User">
+            </div>
+            <div class="form-group">
+                <label for="room">Room</label>
+                <input type="text" id="room" placeholder="Room name" value="general">
+            </div>
+            <button class="btn-primary" onclick="joinRoom()">Join Room</button>
+            <button class="btn-secondary" onclick="leaveRoom()">Leave Room</button>
+
+            <div class="status">
+                <span class="status-indicator status-disconnected" id="status-indicator"></span>
+                <span id="status-text">Disconnected</span>
+                <div id="room-status" style="margin-top: 0.5rem; color: #888;"></div>
+            </div>
+
+            <div class="api-section">
+                <h2>Django API Broadcast</h2>
+                <p>Send a message from Django's HTTP API to all WebSocket clients:</p>
+                <div class="form-group">
+                    <input type="text" id="api-message" placeholder="API message">
+                </div>
+                <button class="btn-secondary" onclick="sendFromAPI()">Send via API</button>
+            </div>
+        </aside>
+
+        <main class="main">
+            <div class="messages" id="messages"></div>
+            <div class="input-area">
+                <input type="text" id="message-input" placeholder="Type a message..."
+                    onkeypress="handleKeyPress(event)">
+                <button class="btn-primary" onclick="sendMessage()">Send</button>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let ws = null;
+        let currentRoom = null;
+        let username = 'User';
+
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws/chat/`;
+
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                updateStatus(true);
+                addMessage('Connected to server', 'system');
+            };
+
+            ws.onclose = () => {
+                updateStatus(false);
+                addMessage('Disconnected from server', 'system');
+                currentRoom = null;
+                updateRoomStatus();
+                // Reconnect after 3 seconds
+                setTimeout(connect, 3000);
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleMessage(data);
+            };
+        }
+
+        function handleMessage(data) {
+            switch (data.type) {
+                case 'system':
+                case 'error':
+                    addMessage(data.message, 'system');
+                    break;
+                case 'joined':
+                    currentRoom = data.room;
+                    updateRoomStatus();
+                    addMessage(data.message, 'system');
+                    break;
+                case 'left':
+                    currentRoom = null;
+                    updateRoomStatus();
+                    addMessage(data.message, 'system');
+                    break;
+                case 'user_joined':
+                    addMessage(`${data.username} joined the room`, 'system');
+                    break;
+                case 'user_left':
+                    addMessage(`${data.username} left the room`, 'system');
+                    break;
+                case 'message':
+                    const isOwn = data.sender === username;
+                    const isApi = data.from_api === true;
+                    addMessage(data.message, isApi ? 'api' : (isOwn ? 'user' : 'other'), data.sender);
+                    break;
+            }
+        }
+
+        function updateStatus(connected) {
+            const indicator = document.getElementById('status-indicator');
+            const text = document.getElementById('status-text');
+
+            if (connected) {
+                indicator.className = 'status-indicator status-connected';
+                text.textContent = 'Connected';
+            } else {
+                indicator.className = 'status-indicator status-disconnected';
+                text.textContent = 'Disconnected';
+            }
+        }
+
+        function updateRoomStatus() {
+            const roomStatus = document.getElementById('room-status');
+            if (currentRoom) {
+                roomStatus.textContent = `In room: ${currentRoom}`;
+            } else {
+                roomStatus.textContent = 'Not in a room';
+            }
+        }
+
+        function addMessage(text, type, sender = null) {
+            const messages = document.getElementById('messages');
+            const div = document.createElement('div');
+            div.className = `message message-${type}`;
+
+            if (sender && type !== 'system') {
+                const senderDiv = document.createElement('div');
+                senderDiv.className = 'message-sender';
+                senderDiv.textContent = sender + (type === 'api' ? ' (via API)' : '');
+                div.appendChild(senderDiv);
+            }
+
+            const textNode = document.createTextNode(text);
+            div.appendChild(textNode);
+
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        function joinRoom() {
+            username = document.getElementById('username').value || 'User';
+            const room = document.getElementById('room').value || 'general';
+
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'join',
+                    room: room,
+                    username: username
+                }));
+            }
+        }
+
+        function leaveRoom() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'leave'
+                }));
+            }
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+
+            if (message && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'message',
+                    message: message
+                }));
+                input.value = '';
+            }
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        async function sendFromAPI() {
+            const message = document.getElementById('api-message').value.trim();
+            const room = document.getElementById('room').value || 'general';
+
+            if (!message) return;
+
+            try {
+                const response = await fetch('/api/broadcast/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        room: room,
+                        message: message,
+                        sender: 'Django API'
+                    })
+                });
+
+                if (response.ok) {
+                    document.getElementById('api-message').value = '';
+                    addMessage('API broadcast sent', 'system');
+                } else {
+                    const error = await response.json();
+                    addMessage(`API error: ${error.error}`, 'system');
+                }
+            } catch (error) {
+                addMessage(`API error: ${error.message}`, 'system');
+            }
+        }
+
+        // Connect on page load
+        connect();
+    </script>
+</body>
+
+</html>
