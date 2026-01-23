@@ -17,8 +17,9 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = []
-license = { file = "LICENSE" }
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 
 [project.optional-dependencies]
 django = ["django>=4.2"]
