@@ -1,4 +1,4 @@
-# Webrockets
+# Webrockets 🚀
 
 [![PyPI](https://img.shields.io/pypi/v/webrockets.svg)](https://pypi.org/project/webrockets/)
 [![Python](https://img.shields.io/pypi/pyversions/webrockets.svg)](https://pypi.org/project/webrockets/)
@@ -8,7 +8,7 @@ A high-performance WebSocket server for Python, with first-class Django support.
 
 ## Features
 
-- **Blazing Fast** - Rust-powered WebSocket server using axum and fastwebsockets
+- **High-performance** - Rust-powered WebSocket server using axum and fastwebsockets
 - **Django Integration** - Built-in authentication classes and management commands
 - **Pattern Matching** - Route messages based on discriminator fields with optional Pydantic validation
 - **Broadcasting** - Built-in support for Redis and RabbitMQ message brokers
