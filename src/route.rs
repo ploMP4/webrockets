@@ -2,7 +2,6 @@ use indexmap::IndexMap;
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::types::PyList;
 use pyo3::{prelude::*, types::PyFunction};
-use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::{Arc, OnceLock, RwLock};
 
@@ -32,9 +31,9 @@ impl MatchValue {
     }
 }
 
-pub(crate) type FrozenHandlers = Arc<IndexMap<Arc<str>, HashMap<MatchValue, Arc<ReceiveHandler>>>>;
+pub(crate) type FrozenHandlers = Arc<IndexMap<Arc<str>, IndexMap<MatchValue, Arc<ReceiveHandler>>>>;
 
-type MutableHandlers = IndexMap<Arc<str>, HashMap<MatchValue, Arc<ReceiveHandler>>>;
+type MutableHandlers = IndexMap<Arc<str>, IndexMap<MatchValue, Arc<ReceiveHandler>>>;
 
 #[pyclass]
 #[derive(Clone)]
