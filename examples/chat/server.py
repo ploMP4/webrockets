@@ -2,6 +2,7 @@
 # requires-python = ">=3.10"
 # dependencies = [
 #   "pydantic",
+#   "webrockets"
 # ]
 # ///
 
