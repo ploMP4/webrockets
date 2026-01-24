@@ -43,34 +43,28 @@
 <path d="M 36,355.5 L 44,355.5" />
 </g>
 <g stroke="rgb(0,0,0)" stroke-width="1" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="4" stroke-opacity="0.1" fill="none">
-<path d="M 45,301.5 L 768,301.5" />
+<path d="M 45,290.5 L 768,290.5" />
 </g>
 <g stroke="rgb(0,0,0)" stroke-width="1" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="4" stroke-opacity="0.1" fill="none">
-<path d="M 36,301.5 L 44,301.5" />
+<path d="M 36,290.5 L 44,290.5" />
 </g>
 <g stroke="rgb(0,0,0)" stroke-width="1" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="4" stroke-opacity="0.1" fill="none">
-<path d="M 45,247.5 L 768,247.5" />
+<path d="M 45,226.5 L 768,226.5" />
 </g>
 <g stroke="rgb(0,0,0)" stroke-width="1" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="4" stroke-opacity="0.1" fill="none">
-<path d="M 36,247.5 L 44,247.5" />
+<path d="M 36,226.5 L 44,226.5" />
 </g>
 <g stroke="rgb(0,0,0)" stroke-width="1" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="4" stroke-opacity="0.1" fill="none">
-<path d="M 45,193.5 L 768,193.5" />
+<path d="M 45,161.5 L 768,161.5" />
 </g>
 <g stroke="rgb(0,0,0)" stroke-width="1" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="4" stroke-opacity="0.1" fill="none">
-<path d="M 36,193.5 L 44,193.5" />
+<path d="M 36,161.5 L 44,161.5" />
 </g>
 <g stroke="rgb(0,0,0)" stroke-width="1" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="4" stroke-opacity="0.1" fill="none">
-<path d="M 45,139.5 L 768,139.5" />
+<path d="M 45,96.5 L 768,96.5" />
 </g>
 <g stroke="rgb(0,0,0)" stroke-width="1" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="4" stroke-opacity="0.1" fill="none">
-<path d="M 36,139.5 L 44,139.5" />
-</g>
-<g stroke="rgb(0,0,0)" stroke-width="1" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="4" stroke-opacity="0.1" fill="none">
-<path d="M 45,85.5 L 768,85.5" />
-</g>
-<g stroke="rgb(0,0,0)" stroke-width="1" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="4" stroke-opacity="0.1" fill="none">
-<path d="M 36,85.5 L 44,85.5" />
+<path d="M 36,96.5 L 44,96.5" />
 </g>
 <g stroke="rgb(0,0,0)" stroke-width="1" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="4" stroke-opacity="0.1" fill="none">
 <path d="M 45,32.5 L 768,32.5" />
@@ -79,23 +73,23 @@
 <path d="M 36,32.5 L 44,32.5" />
 </g>
 <g stroke="none" fill="rgb(255,99,132)" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-1)" >
-<path d="M 256,10 L 256,22 296,22 296,10 Z" />
+<path d="M 277,10 L 277,22 317,22 317,10 Z" />
 </g>
 <g stroke="none" fill="#666" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-1)" >
 <text style="font:normal 12px &apos;Helvetica Neue&apos;, &apos;Helvetica&apos;, &apos;Arial&apos;, sans-serif;" text-anchor="start" dominant-baseline="middle" transform="matrix(1 0 0 1 0 0)" 
-><tspan x="302" y="16">Connect time (ms) - 100 conn (echo)</tspan></text></g>
+><tspan x="323" y="16">Connect time (ms) - 200 conn</tspan></text></g>
 <g stroke="rgb(0,0,0)" stroke-width="1" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="4" stroke-opacity="0.1" fill="none">
 <path d="M 44,355.5 L 769,355.5" />
 </g>
 <g stroke="none" fill="#666" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-2)" >
 <text style="font:normal 12px &apos;Helvetica Neue&apos;, &apos;Helvetica&apos;, &apos;Arial&apos;, sans-serif;" text-anchor="middle" dominant-baseline="middle" transform="matrix(1 0 0 1 134.5 366.6)" 
-><tspan x="0" y="7.199999999999999">webrockets</tspan></text></g>
+><tspan x="0" y="7.199999999999999">python-websockets</tspan></text></g>
 <g stroke="none" fill="#666" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-2)" >
 <text style="font:normal 12px &apos;Helvetica Neue&apos;, &apos;Helvetica&apos;, &apos;Arial&apos;, sans-serif;" text-anchor="middle" dominant-baseline="middle" transform="matrix(1 0 0 1 315.5 366.6)" 
 ><tspan x="0" y="7.199999999999999">fastapi</tspan></text></g>
 <g stroke="none" fill="#666" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-2)" >
 <text style="font:normal 12px &apos;Helvetica Neue&apos;, &apos;Helvetica&apos;, &apos;Arial&apos;, sans-serif;" text-anchor="middle" dominant-baseline="middle" transform="matrix(1 0 0 1 496.5 366.6)" 
-><tspan x="0" y="7.199999999999999">python-websockets</tspan></text></g>
+><tspan x="0" y="7.199999999999999">webrockets</tspan></text></g>
 <g stroke="none" fill="#666" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-2)" >
 <text style="font:normal 12px &apos;Helvetica Neue&apos;, &apos;Helvetica&apos;, &apos;Arial&apos;, sans-serif;" text-anchor="middle" dominant-baseline="middle" transform="matrix(1 0 0 1 677.5 366.6)" 
 ><tspan x="0" y="7.199999999999999">django-channels</tspan></text></g>
@@ -106,33 +100,30 @@
 <text style="font:normal 12px &apos;Helvetica Neue&apos;, &apos;Helvetica&apos;, &apos;Arial&apos;, sans-serif;" text-anchor="end" dominant-baseline="middle" transform="matrix(1 0 0 1 33 355.6)" 
 ><tspan x="0" y="0">0</tspan></text></g>
 <g stroke="none" fill="#666" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-3)" >
-<text style="font:normal 12px &apos;Helvetica Neue&apos;, &apos;Helvetica&apos;, &apos;Arial&apos;, sans-serif;" text-anchor="end" dominant-baseline="middle" transform="matrix(1 0 0 1 33 301.6666666666667)" 
-><tspan x="0" y="0">200</tspan></text></g>
+<text style="font:normal 12px &apos;Helvetica Neue&apos;, &apos;Helvetica&apos;, &apos;Arial&apos;, sans-serif;" text-anchor="end" dominant-baseline="middle" transform="matrix(1 0 0 1 33 290.88000000000005)" 
+><tspan x="0" y="0">500</tspan></text></g>
 <g stroke="none" fill="#666" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-3)" >
-<text style="font:normal 12px &apos;Helvetica Neue&apos;, &apos;Helvetica&apos;, &apos;Arial&apos;, sans-serif;" text-anchor="end" dominant-baseline="middle" transform="matrix(1 0 0 1 33 247.73333333333338)" 
-><tspan x="0" y="0">400</tspan></text></g>
-<g stroke="none" fill="#666" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-3)" >
-<text style="font:normal 12px &apos;Helvetica Neue&apos;, &apos;Helvetica&apos;, &apos;Arial&apos;, sans-serif;" text-anchor="end" dominant-baseline="middle" transform="matrix(1 0 0 1 33 193.8)" 
-><tspan x="0" y="0">600</tspan></text></g>
-<g stroke="none" fill="#666" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-3)" >
-<text style="font:normal 12px &apos;Helvetica Neue&apos;, &apos;Helvetica&apos;, &apos;Arial&apos;, sans-serif;" text-anchor="end" dominant-baseline="middle" transform="matrix(1 0 0 1 33 139.86666666666667)" 
-><tspan x="0" y="0">800</tspan></text></g>
-<g stroke="none" fill="#666" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-3)" >
-<text style="font:normal 12px &apos;Helvetica Neue&apos;, &apos;Helvetica&apos;, &apos;Arial&apos;, sans-serif;" text-anchor="end" dominant-baseline="middle" transform="matrix(1 0 0 1 33 85.93333333333332)" 
+<text style="font:normal 12px &apos;Helvetica Neue&apos;, &apos;Helvetica&apos;, &apos;Arial&apos;, sans-serif;" text-anchor="end" dominant-baseline="middle" transform="matrix(1 0 0 1 33 226.16)" 
 ><tspan x="0" y="0">1,000</tspan></text></g>
 <g stroke="none" fill="#666" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-3)" >
+<text style="font:normal 12px &apos;Helvetica Neue&apos;, &apos;Helvetica&apos;, &apos;Arial&apos;, sans-serif;" text-anchor="end" dominant-baseline="middle" transform="matrix(1 0 0 1 33 161.44000000000003)" 
+><tspan x="0" y="0">1,500</tspan></text></g>
+<g stroke="none" fill="#666" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-3)" >
+<text style="font:normal 12px &apos;Helvetica Neue&apos;, &apos;Helvetica&apos;, &apos;Arial&apos;, sans-serif;" text-anchor="end" dominant-baseline="middle" transform="matrix(1 0 0 1 33 96.71999999999998)" 
+><tspan x="0" y="0">2,000</tspan></text></g>
+<g stroke="none" fill="#666" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-3)" >
 <text style="font:normal 12px &apos;Helvetica Neue&apos;, &apos;Helvetica&apos;, &apos;Arial&apos;, sans-serif;" text-anchor="end" dominant-baseline="middle" transform="matrix(1 0 0 1 33 32)" 
-><tspan x="0" y="0">1,200</tspan></text></g>
+><tspan x="0" y="0">2,500</tspan></text></g>
 <g stroke="none" fill="rgb(255,99,132)" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-4)" >
-<path d="M 69.34,354.915047 L 69.34,355.1 199.66,355.1 199.66,354.915047 Z" />
+<path d="M 69.34,354.558008 L 69.34,355.1 199.66,355.1 199.66,354.558008 Z" />
 </g>
 <g stroke="none" fill="rgb(255,99,132)" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-4)" >
-<path d="M 250.34,354.777517 L 250.34,355.1 380.66,355.1 380.66,354.777517 Z" />
+<path d="M 250.34,354.292656 L 250.34,355.1 380.66,355.1 380.66,354.292656 Z" />
 </g>
 <g stroke="none" fill="rgb(255,99,132)" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-4)" >
-<path d="M 431.34,354.480883 L 431.34,355.1 561.66,355.1 561.66,354.480883 Z" />
+<path d="M 431.34,352.300574 L 431.34,355.1 561.66,355.1 561.66,352.300574 Z" />
 </g>
 <g stroke="none" fill="rgb(255,99,132)" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-4)" >
-<path d="M 612.34,79.428973 L 612.34,355.1 742.66,355.1 742.66,79.428973 Z" />
+<path d="M 612.34,90.970275 L 612.34,355.1 742.66,355.1 742.66,90.970275 Z" />
 </g>
 </svg>

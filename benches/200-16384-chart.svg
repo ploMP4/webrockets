@@ -79,11 +79,11 @@
 <path d="M 42,32.5 L 50,32.5" />
 </g>
 <g stroke="none" fill="rgb(54,162,235)" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-1)" >
-<path d="M 247,10 L 247,22 287,22 287,10 Z" />
+<path d="M 268,10 L 268,22 308,22 308,10 Z" />
 </g>
 <g stroke="none" fill="#666" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-1)" >
 <text style="font:normal 12px &apos;Helvetica Neue&apos;, &apos;Helvetica&apos;, &apos;Arial&apos;, sans-serif;" text-anchor="start" dominant-baseline="middle" transform="matrix(1 0 0 1 0 0)" 
-><tspan x="293" y="16">Msg/sec - 500 conn, 16384 bytes (echo)</tspan></text></g>
+><tspan x="314" y="16">Msg/sec - 200 conn, 16384 bytes</tspan></text></g>
 <g stroke="rgb(0,0,0)" stroke-width="1" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="4" stroke-opacity="0.1" fill="none">
 <path d="M 50,355.5 L 769,355.5" />
 </g>
@@ -124,15 +124,15 @@
 <text style="font:normal 12px &apos;Helvetica Neue&apos;, &apos;Helvetica&apos;, &apos;Arial&apos;, sans-serif;" text-anchor="end" dominant-baseline="middle" transform="matrix(1 0 0 1 39 32)" 
 ><tspan x="0" y="0">60,000</tspan></text></g>
 <g stroke="none" fill="rgb(54,162,235)" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-4)" >
-<path d="M 75.13,63.711721 L 75.13,355.1 204.37,355.1 204.37,63.711721 Z" />
+<path d="M 75.13,44.39388 L 75.13,355.1 204.37,355.1 204.37,44.39388 Z" />
 </g>
 <g stroke="none" fill="rgb(54,162,235)" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-4)" >
-<path d="M 254.63,148.250064 L 254.63,355.1 383.87,355.1 383.87,148.250064 Z" />
+<path d="M 254.63,140.661644 L 254.63,355.1 383.87,355.1 383.87,140.661644 Z" />
 </g>
 <g stroke="none" fill="rgb(54,162,235)" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-4)" >
-<path d="M 434.13,214.661413 L 434.13,355.1 563.37,355.1 563.37,214.661413 Z" />
+<path d="M 434.13,193.451591 L 434.13,355.1 563.37,355.1 563.37,193.451591 Z" />
 </g>
 <g stroke="none" fill="rgb(54,162,235)" fill-rule="nonzero" fill-opacity="1"  clip-path="url(#clip-4)" >
-<path d="M 613.63,320.69974 L 613.63,355.1 742.87,355.1 742.87,320.69974 Z" />
+<path d="M 613.63,324.443792 L 613.63,355.1 742.87,355.1 742.87,324.443792 Z" />
 </g>
 </svg>
