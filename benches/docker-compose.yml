@@ -10,17 +10,6 @@ services:
       dockerfile: servers/webrockets/Dockerfile
     restart: unless-stopped
 
-  webrockets-django:
-    network_mode: host
-    ulimits:
-      nofile:
-        soft: 1048576
-        hard: 1048576
-    build:
-      context: .
-      dockerfile: servers/webrockets-django/Dockerfile
-    restart: unless-stopped
-
   channels:
     network_mode: host
     ulimits:
@@ -41,17 +30,6 @@ services:
     build:
       context: .
       dockerfile: servers/fastapi/Dockerfile
-    restart: unless-stopped
-
-  bolt:
-    network_mode: host
-    ulimits:
-      nofile:
-        soft: 1048576
-        hard: 1048576
-    build:
-      context: .
-      dockerfile: servers/bolt/Dockerfile
     restart: unless-stopped
 
   websockets:
