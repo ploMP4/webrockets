@@ -2,36 +2,16 @@ import { $ } from "https://deno.land/x/dax@0.31.1/mod.ts";
 import { chart } from "https://deno.land/x/fresh_charts/core.ts";
 import { TextLineStream } from "https://deno.land/std/streams/text_line_stream.ts";
 
-function load_test(conn, port, bytes, path) {
-    const args = [conn, "0.0.0.0", port, 0, 0];
-    if (bytes > 20) {
-        args.push(bytes);
-    }
-    args.push(path);
-    return $`./load_test ${args}`.stdout("piped").spawn();
+function load_test(conn, port, bytes) {
+    return $`./load_test ${conn} 0.0.0.0 ${port} 0 0 ${bytes}`
+        .stdout("piped").spawn();
 }
-
-// Parse command line arguments
-const routeType = Deno.args[0] || "echo";
-const validRoutes = ["echo", "db", "compute"];
-if (!validRoutes.includes(routeType)) {
-    console.log(`Usage: deno run --allow-all run.js [${validRoutes.join("|")}]`);
-    console.log(`  Default: echo`);
-    Deno.exit(1);
-}
-
-const path = `/${routeType}`;
-console.log(`Running benchmarks for route: ${path}`);
 
 const targets = [
     {
         port: 6969,
         name: "webrockets",
     },
-    // {
-    //     port: 6970,
-    //     name: "webrockets-django",
-    // },
     {
         port: 8000,
         name: "django-channels",
@@ -40,10 +20,6 @@ const targets = [
         port: 1234,
         name: "fastapi",
     },
-    // {
-    //     port: 1235,
-    //     name: "django-bolt",
-    // },
     {
         port: 4200,
         name: "python-websockets",
@@ -75,10 +51,6 @@ const cases = [
         conn: 10000,
         bytes: 1024,
     },
-    {
-        conn: 20000,
-        bytes: 300,
-    },
 ];
 
 for (const { conn, bytes } of cases) {
@@ -90,7 +62,7 @@ for (const { conn, bytes } of cases) {
         let logs = [];
         let connectMs = null;
         try {
-            const client = load_test(conn, port, bytes, path);
+            const client = load_test(conn, port, bytes == 20 ? "" : bytes);
             const readable = client.stdout().pipeThrough(new TextDecoderStream())
                 .pipeThrough(new TextLineStream());
             let msgCount = 0;
@@ -145,14 +117,14 @@ for (const { conn, bytes } of cases) {
             labels: Object.keys(msgResults),
             datasets: [
                 {
-                    label: `Msg/sec - ${conn} conn, ${bytes} bytes (${routeType})`,
+                    label: `Msg/sec - ${conn} conn, ${bytes} bytes`,
                     data: Object.values(msgResults),
                     backgroundColor: "rgba(54, 162, 235, 255)",
                 },
             ],
         },
     });
-    const msgFilename = `./${routeType}-${conn}-${bytes}-chart.svg`;
+    const msgFilename = `./${conn}-${bytes}-chart.svg`;
     Deno.writeTextFileSync(msgFilename, msgSvg);
 
     // Generate connection time chart
@@ -162,14 +134,14 @@ for (const { conn, bytes } of cases) {
             labels: Object.keys(connectResults),
             datasets: [
                 {
-                    label: `Connect time (ms) - ${conn} conn (${routeType})`,
+                    label: `Connect time (ms) - ${conn} conn`,
                     data: Object.values(connectResults),
                     backgroundColor: "rgba(255, 99, 132, 255)",
                 },
             ],
         },
     });
-    const connectFilename = `./${routeType}-${conn}-${bytes}-connect-chart.svg`;
+    const connectFilename = `./${conn}-${bytes}-connect-chart.svg`;
     Deno.writeTextFileSync(connectFilename, connectSvg);
 
     console.log(`  Charts: ${msgFilename}, ${connectFilename}`);

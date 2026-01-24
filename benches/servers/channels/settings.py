@@ -1,5 +1,3 @@
-"""Minimal Django settings for Channels benchmark server."""
-
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent

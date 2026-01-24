@@ -82,8 +82,8 @@ void init_big_message(unsigned int size) {
   web_socket_request_text[10] = 4;
 }
 
-char request_deflate_template[] =
-    "GET %s HTTP/1.1\r\n"
+char request_deflate[] =
+    "GET /echo HTTP/1.1\r\n"
     "Upgrade: websocket\r\n"
     "Connection: Upgrade\r\n"
     "Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==\r\n"
@@ -91,8 +91,8 @@ char request_deflate_template[] =
     "Host: server.example.com\r\n"
     "Sec-WebSocket-Version: 13\r\n\r\n";
 
-char request_text_template[] =
-    "GET %s HTTP/1.1\r\n"
+char request_text[] =
+    "GET /echo HTTP/1.1\r\n"
     "Upgrade: websocket\r\n"
     "Connection: Upgrade\r\n"
     "Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==\r\n"
@@ -100,9 +100,6 @@ char request_text_template[] =
     "Host: server.example.com\r\n"
     "Sec-WebSocket-Version: 13\r\n\r\n";
 
-char request_deflate[512];
-char request_text[512];
-char *ws_path = "/echo";
 char *host;
 int port;
 int connections;
@@ -140,8 +137,9 @@ void next_connection(struct us_socket_t *s) {
   } else {
     struct timespec end_time;
     clock_gettime(CLOCK_MONOTONIC, &end_time);
-    double elapsed_ms = (end_time.tv_sec - connect_start_time.tv_sec) * 1000.0 +
-                        (end_time.tv_nsec - connect_start_time.tv_nsec) / 1000000.0;
+    double elapsed_ms =
+        (end_time.tv_sec - connect_start_time.tv_sec) * 1000.0 +
+        (end_time.tv_nsec - connect_start_time.tv_nsec) / 1000000.0;
     printf("Connect_ms %d %.2f\n", total_connections, elapsed_ms);
     fflush(stdout);
     printf("Running benchmark now...\n");
@@ -257,9 +255,8 @@ struct us_socket_t *on_http_socket_timeout(struct us_socket_t *s) {
 int main(int argc, char **argv) {
 
   /* Parse host and port */
-  if (argc < 6 || argc > 8) {
-    printf("Usage: connections host port ssl deflate [size_bytes] [path]\n");
-    printf("  path: WebSocket path (default: /echo)\n");
+  if (argc != 6 && argc != 7) {
+    printf("Usage: connections host port ssl deflate [size_bytes]\n");
     return 0;
   }
 
@@ -267,17 +264,6 @@ int main(int argc, char **argv) {
   host = malloc(strlen(argv[2]) + 1);
   memcpy(host, argv[2], strlen(argv[2]) + 1);
   connections = atoi(argv[1]);
-
-  /* Optional path argument (can be at position 7 or 8) */
-  if (argc >= 7 && argv[argc - 1][0] == '/') {
-    ws_path = argv[argc - 1];
-    argc--; /* Adjust argc so size_bytes logic works correctly */
-  }
-
-  /* Build request strings with the path */
-  snprintf(request_deflate, sizeof(request_deflate), request_deflate_template, ws_path);
-  snprintf(request_text, sizeof(request_text), request_text_template, ws_path);
-
   //    SSL = atoi(argv[4]);
   if (atoi(argv[5])) {
     /* Set up deflate */
@@ -285,7 +271,7 @@ int main(int argc, char **argv) {
     web_socket_request_size = sizeof(web_socket_request_deflate);
 
     upgrade_request = request_deflate;
-    upgrade_request_length = strlen(request_deflate);
+    upgrade_request_length = sizeof(request_deflate) - 1;
   } else {
     /* Only if we are NOT using defalte can we support testing with 100mb for
      * now */
@@ -299,7 +285,7 @@ int main(int argc, char **argv) {
     web_socket_request_size = web_socket_request_text_size;
 
     upgrade_request = request_text;
-    upgrade_request_length = strlen(request_text);
+    upgrade_request_length = sizeof(request_text) - 1;
   }
 
   /* Create the event loop */

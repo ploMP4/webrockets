@@ -10,4 +10,5 @@ COPY servers/fastapi/server.py .
 
 EXPOSE 1234
 
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "1234"]
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "1234", "--backlog", "100000"]
+
