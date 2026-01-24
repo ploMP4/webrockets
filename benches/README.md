@@ -64,7 +64,7 @@ The benchmark runs these scenarios:
 ## Output
 
 Results are saved as SVG bar charts:
-- `echo-{conn}-{bytes}-chart.svg`
+- `{conn}-{bytes}-chart.svg`
 
 ## Directory Structure
 
