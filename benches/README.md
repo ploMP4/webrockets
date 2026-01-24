@@ -2,6 +2,8 @@
 
 Benchmark suite for comparing WebSocket server implementations in Python.
 
+The benchmark runner (`run.js`) and load test client (`load_test.c`) are adapted from the [fastwebsockets benchmarks](https://github.com/denoland/fastwebsockets/tree/main/benches).
+
 ## Servers
 
 | Server | Port | Description |
@@ -12,14 +14,6 @@ Benchmark suite for comparing WebSocket server implementations in Python.
 | fastapi | 1234 | FastAPI with uvicorn |
 | django-bolt | 1235 | Django-Bolt async framework |
 | python-websockets | 4200 | Pure Python websockets library |
-
-## Routes
-
-Each server exposes three endpoints for different benchmark scenarios:
-
-- `/echo` - Simple echo (baseline throughput)
-- `/db` - SQLite insert + query (database overhead)
-- `/compute` - 1000x SHA256 iterations (CPU-bound)
 
 ## Quick Start
 
@@ -51,38 +45,7 @@ docker compose up -d --build
 ### 4. Run benchmarks
 
 ```bash
-# Echo benchmark (default)
 deno run --allow-all run.js
-
-# Database benchmark
-deno run --allow-all run.js db
-
-# Compute benchmark
-deno run --allow-all run.js compute
-```
-
-## Manual Testing
-
-Test individual servers with websocat:
-
-```bash
-# webrockets
-echo "hello" | websocat ws://localhost:6969/echo
-
-# webrockets-django
-echo "hello" | websocat ws://localhost:6970/echo
-
-# django-channels
-echo "hello" | websocat ws://localhost:8000/echo
-
-# fastapi
-echo "hello" | websocat ws://localhost:1234/echo
-
-# django-bolt
-echo "hello" | websocat ws://localhost:1235/echo
-
-# python-websockets
-echo "hello" | websocat ws://localhost:4200/echo
 ```
 
 ## Test Cases
@@ -102,16 +65,6 @@ The benchmark runs these scenarios:
 
 Results are saved as SVG bar charts:
 - `echo-{conn}-{bytes}-chart.svg`
-- `db-{conn}-{bytes}-chart.svg`
-- `compute-{conn}-{bytes}-chart.svg`
-
-## Adding New Routes
-
-To add a new route type (e.g., `/auth`):
-
-1. Add the handler to each server in `servers/*/server.py`
-2. Add the route name to `validRoutes` in `run.js`
-3. Rebuild and restart: `docker compose up -d --build`
 
 ## Directory Structure
 
@@ -123,7 +76,7 @@ benches/
 │   ├── channels/        # Django Channels
 │   ├── fastapi/         # FastAPI
 │   ├── bolt/            # Django-Bolt
-│   └── websockets/      # Pure Python websockets
+│   ├── websockets/      # Pure Python websockets
 ├── wheels/              # Local webrockets wheel (not committed)
 │   └── webrockets-*.whl
 ├── docker-compose.yml   # All servers

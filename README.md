@@ -14,6 +14,14 @@ A high-performance WebSocket server for Python, with first-class Django support.
 - **Broadcasting** - Built-in support for Redis and RabbitMQ message brokers
 - **Async Ready** - Supports both sync and async Python callbacks
 
+## Performance
+
+webrockets significantly outperforms other Python WebSocket implementations thanks to its Rust-powered core.
+
+![Benchmark: 100 connections, 20 byte messages](benches/echo-100-20-chart.svg)
+
+In a simple echo benchmark with 100 concurrent connections, webrockets achieves up to **10x higher throughput** compared to Django Channels with Daphne. See the [full benchmark results](https://webrockets.io/benchmarks/) for detailed comparisons across different scenarios.
+
 ## Installation
 
 ```bash

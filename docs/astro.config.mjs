@@ -15,6 +15,7 @@ export default defineConfig({
                     items: [
                         { label: 'Introduction', slug: 'guides/introduction' },
                         { label: 'Quick Start', slug: 'guides/quick-start' },
+                        { label: 'Benchmarks', slug: 'benchmarks' },
                     ],
                 },
                 {
