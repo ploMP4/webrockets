@@ -331,14 +331,12 @@ impl ReceiveDecorator {
                     }
                 }
 
-                // Create handler once, share via Arc for all key/value combinations
                 let handler = Arc::new(ReceiveHandler::new(
                     Callback::new(func.clone_ref(py), is_async),
                     self.schema.as_ref().map(|s| s.clone_ref(py)),
                     m.remove_key,
                 ));
 
-                // Register for all key/value combinations
                 let mut handlers = view
                     .receive_handlers_mut
                     .write()

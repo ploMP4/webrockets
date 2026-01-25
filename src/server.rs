@@ -2,7 +2,7 @@ use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::{routing::get, Router};
-use fastwebsockets::{upgrade, Frame, OpCode, WebSocketError};
+use fastwebsockets::{upgrade, CloseCode, Frame, OpCode, WebSocketError};
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -268,14 +268,19 @@ impl WebsocketServer {
                 Ok(frame) => match frame.opcode {
                     OpCode::Close => {
                         if let Some(cb) = &disconnect_callback {
-                            let payload_bytes = &frame.payload[..];
-                            let close_code = frame.opcode as u16;
-                            let payload_str = std::str::from_utf8(payload_bytes);
+                            // Close frame payload: first 2 bytes are close code (big-endian), rest is reason
+                            let (close_code, reason_bytes) = if frame.payload.len() >= 2 {
+                                let code = u16::from_be_bytes([frame.payload[0], frame.payload[1]]);
+                                (code, &frame.payload[2..])
+                            } else {
+                                (CloseCode::Status.into(), &frame.payload[..])
+                            };
+                            let payload_str = std::str::from_utf8(reason_bytes);
 
                             if let Err(e) = Python::attach(|py| match payload_str {
                                 Ok(s) => cb.invoke(py, (&conn, close_code, s)),
                                 Err(_) => {
-                                    let s = String::from_utf8_lossy(payload_bytes);
+                                    let s = String::from_utf8_lossy(reason_bytes);
                                     cb.invoke(py, (&conn, close_code, s))
                                 }
                             }) {
@@ -285,8 +290,7 @@ impl WebsocketServer {
                         break;
                     }
                     OpCode::Text => {
-                        let payload_bytes = &frame.payload[..];
-                        let payload_str = match std::str::from_utf8(payload_bytes) {
+                        let payload_str = match std::str::from_utf8(&frame.payload) {
                             Ok(s) => s,
                             Err(_) => {
                                 log::error!("Invalid UTF-8 in WebSocket text frame");
@@ -317,7 +321,8 @@ impl WebsocketServer {
                         match match_result {
                             Some((handler, matched_key)) => {
                                 let payload: Cow<'_, str> = if handler.remove_key {
-                                    let mut json = json_value.unwrap(); // Safe: we matched on it
+                                    let mut json =
+                                        json_value.expect("matched json value does not exist");
                                     if let Some(obj) = json.as_object_mut() {
                                         obj.remove(matched_key.as_ref());
                                     }
