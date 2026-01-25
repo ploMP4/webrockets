@@ -1,33 +1,123 @@
+import asyncio
 import tempfile
 import threading
-import time
+from collections.abc import Callable
+from functools import wraps
 from pathlib import Path
+from typing import Any
 
 import django
 import pytest
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from webrockets import WebsocketServer
+from webrockets import WebsocketRoute, WebsocketServer
+from webrockets.test import runserver
 
 # Use a temp file for SQLite so all threads can access it
 _test_db_file = Path(tempfile.gettempdir()) / "webrockets_test.sqlite3"
 
 
-class RunServer:
-    def __init__(self, server: WebsocketServer) -> None:
-        self._server = server
+class _ErrorCapture:
+    def __init__(self):
+        self._errors: list[BaseException] = []
+        self._lock = threading.Lock()
 
-    def __enter__(self):
-        self._thread = threading.Thread(target=self._server.start)
-        self._thread.start()
-        time.sleep(0.1)
-        return self
+    def wrap(self, func: Callable) -> Callable:
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except BaseException as e:
+                with self._lock:
+                    self._errors.append(e)
+                raise
+
+        @wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            try:
+                return await func(*args, **kwargs)
+            except BaseException as e:
+                with self._lock:
+                    self._errors.append(e)
+                raise
+
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
+        return sync_wrapper
+
+    def check(self):
+        with self._lock:
+            if self._errors:
+                raise self._errors[0]
+
+
+class _TestRoute:
+    def __init__(self, route: WebsocketRoute, error_capture: _ErrorCapture):
+        self._route = route
+        self._errors = error_capture
+
+    def connect(self, *args, **kwargs) -> Any:
+        original_decorator = self._route.connect(*args, **kwargs)
+
+        def wrapper(func):
+            return original_decorator(self._errors.wrap(func))
+
+        return wrapper
+
+    def receive(self, *args, **kwargs) -> Any:
+        if args and callable(args[0]) and not kwargs:
+            # Called as @route.receive without arguments
+            func = args[0]
+            return self._route.receive(self._errors.wrap(func))
+        else:
+            # Called as @route.receive(...) with arguments
+            original_decorator = self._route.receive(*args, **kwargs)
+
+            def wrapper(func):
+                return original_decorator(self._errors.wrap(func))
+
+            return wrapper
+
+    def disconnect(self, *args, **kwargs) -> Any:
+        func = args[0]
+        return self._route.disconnect(self._errors.wrap(func))
+
+    def __getattr__(self, name):
+        return getattr(self._route, name)
+
+
+class TestWebsocketServer:
+    def __init__(self, server: WebsocketServer | None = None) -> None:
+        if server:
+            self._server = server
+        else:
+            self._server = WebsocketServer()
+        self._errors = _ErrorCapture()
+
+    def create_route(self, *args, **kwargs) -> Any:
+        route = self._server.create_route(*args, **kwargs)
+        return _TestRoute(route, self._errors)
+
+    def check_errors(self):
+        self._errors.check()
+
+    def __getattr__(self, name):
+        return getattr(self._server, name)
+
+
+class runtestserver(runserver):
+    def __init__(self, server: WebsocketServer) -> None:
+        if isinstance(server, TestWebsocketServer):
+            self._server = server._server
+            self._test_server = server
+        else:
+            self._server = server
+            self._test_server = None
 
     def __exit__(self, exc_type, exc, tb):
-        self._server.stop()
-        self._thread.join(timeout=5)
-        if self._thread.is_alive():
-            raise RuntimeError("WebSocket server did not shut down cleanly")
+        super().__exit__(exc_type, exc, tb)
+        if exc_type is None and self._test_server is not None:
+            self._test_server.check_errors()
 
 
 def pytest_configure():
@@ -167,4 +257,4 @@ def websocket_scope():
 
 @pytest.fixture
 def ws_server():
-    yield WebsocketServer()
+    yield TestWebsocketServer()

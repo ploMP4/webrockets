@@ -5,8 +5,7 @@ import pytest
 import websockets
 from pydantic import BaseModel
 from webrockets import Connection, IncomingConnection, Match, WebsocketServer
-
-from .conftest import RunServer
+from webrockets.test import runserver
 
 
 class TestCallbacks:
@@ -25,7 +24,7 @@ class TestCallbacks:
             assert conn.path == "/ws"
             conn.close(code=1000)
 
-        with RunServer(ws_server):
+        with runserver(ws_server):
             async with websockets.connect(f"ws://{ws_server.addr()}/ws") as ws:
                 try:
                     await asyncio.wait_for(ws.recv(), timeout=2.0)
@@ -48,7 +47,7 @@ class TestCallbacks:
             assert conn.path == "/ws"
             await conn.aclose(code=1000)
 
-        with RunServer(ws_server):
+        with runserver(ws_server):
             async with websockets.connect(f"ws://{ws_server.addr()}/ws") as ws:
                 try:
                     await asyncio.wait_for(ws.recv(), timeout=2.0)
@@ -66,7 +65,7 @@ class TestCallbacks:
             assert data == "hi"
             conn.close(code=1000)
 
-        with RunServer(ws_server):
+        with runserver(ws_server):
             async with websockets.connect(f"ws://{ws_server.addr()}/ws") as ws:
                 try:
                     await ws.send("hi")
@@ -85,7 +84,7 @@ class TestCallbacks:
             assert data == "hi"
             await conn.aclose(code=1000)
 
-        with RunServer(ws_server):
+        with runserver(ws_server):
             async with websockets.connect(f"ws://{ws_server.addr()}/ws") as ws:
                 try:
                     await ws.send("hi")
@@ -103,7 +102,7 @@ class TestCallbacks:
             assert code == 1000
             assert reason == "test"
 
-        with RunServer(ws_server):
+        with runserver(ws_server):
             async with websockets.connect(f"ws://{ws_server.addr()}/ws") as ws:
                 await ws.close(code=1000, reason="test")
 
@@ -116,7 +115,7 @@ class TestCallbacks:
             assert code == 1000
             assert reason == "test"
 
-        with RunServer(ws_server):
+        with runserver(ws_server):
             async with websockets.connect(f"ws://{ws_server.addr()}/ws") as ws:
                 await ws.close(code=1000, reason="test")
 
@@ -130,7 +129,7 @@ class TestMessageSending:
         def receive(conn: Connection, data: str | bytes):
             conn.send(data)
 
-        with RunServer(ws_server):
+        with runserver(ws_server):
             async with websockets.connect(f"ws://{ws_server.addr()}/ws") as ws:
                 await ws.send("hi")
                 msg = await asyncio.wait_for(ws.recv(), timeout=2.0)
@@ -144,7 +143,7 @@ class TestMessageSending:
         async def receive(conn: Connection, data: str | bytes):
             await conn.asend(data)
 
-        with RunServer(ws_server):
+        with runserver(ws_server):
             async with websockets.connect(f"ws://{ws_server.addr()}/ws") as ws:
                 await ws.send("hi")
                 msg = await asyncio.wait_for(ws.recv(), timeout=2.0)
@@ -158,7 +157,7 @@ class TestMessageSending:
         async def receive(conn: Connection, data: str | bytes):
             await conn.asend(data)
 
-        with RunServer(ws_server):
+        with runserver(ws_server):
             async with websockets.connect(f"ws://{ws_server.addr()}/ws") as ws:
                 binary_data = b"\x00\x01\x02\x03\xff\xfe"
                 await ws.send(binary_data)
@@ -175,7 +174,7 @@ class TestMessageSending:
         async def receive(conn: Connection, data: str | bytes):
             await conn.asend(data)
 
-        with RunServer(ws_server):
+        with runserver(ws_server):
             async with websockets.connect(f"ws://{ws_server.addr()}/ws") as ws:
                 test_data = [
                     b"\x00" * 100,  # Null bytes
@@ -204,7 +203,7 @@ class TestGroups:
         def receive(conn: Connection, _):
             conn.send(json.dumps(conn.groups()))
 
-        with RunServer(ws_server):
+        with runserver(ws_server):
             async with websockets.connect(f"ws://{ws_server.addr()}/ws") as ws:
                 await ws.send("hi")
                 msg = await asyncio.wait_for(ws.recv(), timeout=2.0)
@@ -223,7 +222,7 @@ class TestGroups:
         def receive(conn: Connection, _):
             conn.send(json.dumps(conn.groups()))
 
-        with RunServer(ws_server):
+        with runserver(ws_server):
             async with websockets.connect(f"ws://{ws_server.addr()}/ws") as ws:
                 await ws.send("hi")
                 msg = await asyncio.wait_for(ws.recv(), timeout=2.0)
@@ -243,7 +242,7 @@ class TestBroadcast:
         def receive(conn: Connection, data: str | bytes):
             conn.broadcast(["chat"], data)
 
-        with RunServer(ws_server):
+        with runserver(ws_server):
             async with websockets.connect(f"ws://{ws_server.addr()}/ws") as ws:
                 async with websockets.connect(f"ws://{ws_server.addr()}/ws") as ws2:
                     await ws.send("hi")
@@ -266,7 +265,7 @@ class TestBroadcast:
         async def receive(conn: Connection, data: str | bytes):
             await conn.abroadcast(conn.groups(), data)
 
-        with RunServer(ws_server):
+        with runserver(ws_server):
             async with websockets.connect(f"ws://{ws_server.addr()}/ws") as ws:
                 async with websockets.connect(f"ws://{ws_server.addr()}/ws") as ws2:
                     await ws.send("hi")
@@ -287,7 +286,7 @@ class TestPatternMatching:
         async def receive(conn: Connection, data: str | bytes):
             await conn.asend(data)
 
-        with RunServer(ws_server):
+        with runserver(ws_server):
             async with websockets.connect(f"ws://{ws_server.addr()}/ws") as ws:
                 await ws.send("hi")
 
@@ -304,7 +303,7 @@ class TestPatternMatching:
         async def receive(conn: Connection, data: str | bytes):
             await conn.asend(data)
 
-        with RunServer(ws_server):
+        with runserver(ws_server):
             async with websockets.connect(f"ws://{ws_server.addr()}/ws") as ws:
                 await ws.send("hi")
 
@@ -326,7 +325,7 @@ class TestPatternMatching:
         async def receive(conn: Connection, data: str | bytes):
             await conn.asend(data)
 
-        with RunServer(ws_server):
+        with runserver(ws_server):
             async with websockets.connect(f"ws://{ws_server.addr()}/ws") as ws:
                 await ws.send("hi")
 
@@ -352,7 +351,7 @@ class TestPatternMatching:
         async def receive(conn: Connection, data: str | bytes):
             await conn.asend("generic")
 
-        with RunServer(ws_server):
+        with runserver(ws_server):
             async with websockets.connect(f"ws://{ws_server.addr()}/ws") as ws:
                 await ws.send("hi")
                 msg = await asyncio.wait_for(ws.recv(), timeout=2.0)
@@ -369,7 +368,7 @@ class TestPatternMatching:
         async def receive_message(conn: Connection, data: ChatPayload):
             await conn.asend(data.model_dump_json())
 
-        with RunServer(ws_server):
+        with runserver(ws_server):
             async with websockets.connect(f"ws://{ws_server.addr()}/ws") as ws:
                 payload = json.dumps({"type": "message", "content": "hi"})
                 await ws.send(payload)

@@ -14,8 +14,7 @@ from webrockets import (
     reset_broadcast,
     setup_broadcast,
 )
-
-from .conftest import RunServer
+from webrockets.test import runserver
 
 
 @pytest.fixture(scope="module")
@@ -51,7 +50,7 @@ def redis_ws_server(broker_config: BrokerConfig) -> WebsocketServer:
 class TestRedisBroker:
     @pytest.mark.asyncio
     async def test_redis_broadcaster_send(self, redis_ws_server: WebsocketServer):
-        with RunServer(redis_ws_server):
+        with runserver(redis_ws_server):
             async with websockets.connect(f"ws://{redis_ws_server.addr()}/ws/redis-test/") as ws:
                 broadcast(
                     groups=["redis-test"],
@@ -63,7 +62,7 @@ class TestRedisBroker:
 
     @pytest.mark.asyncio
     async def test_redis_broadcaster_asend(self, redis_ws_server: WebsocketServer):
-        with RunServer(redis_ws_server):
+        with runserver(redis_ws_server):
             async with websockets.connect(f"ws://{redis_ws_server.addr()}/ws/redis-test/") as ws:
                 await abroadcast(
                     groups=["redis-test"],
@@ -75,7 +74,7 @@ class TestRedisBroker:
 
     @pytest.mark.asyncio
     async def test_redis_multiple_broadcasts(self, redis_ws_server: WebsocketServer):
-        with RunServer(redis_ws_server):
+        with runserver(redis_ws_server):
             async with websockets.connect(f"ws://{redis_ws_server.addr()}/ws/redis-test/") as ws:
                 messages = ["first", "second", "third"]
                 for msg in messages:
@@ -95,7 +94,7 @@ class TestRedisBroker:
 
     @pytest.mark.asyncio
     async def test_redis_broadcast_to_multiple_clients(self, redis_ws_server: WebsocketServer):
-        with RunServer(redis_ws_server):
+        with runserver(redis_ws_server):
             async with websockets.connect(f"ws://{redis_ws_server.addr()}/ws/redis-test/") as ws1:
                 async with websockets.connect(
                     f"ws://{redis_ws_server.addr()}/ws/redis-test/"
@@ -116,7 +115,7 @@ class TestRedisBroker:
         def on_receive(conn: Connection, data: str | bytes):
             broadcast(groups=["redis-test"], message="broadcast to all")
 
-        with RunServer(redis_ws_server):
+        with runserver(redis_ws_server):
             async with websockets.connect(
                 f"ws://{redis_ws_server.addr()}/ws/redis-test-broadcast/"
             ) as ws:
@@ -159,7 +158,7 @@ def amqp_ws_server(amqp_broker_config: BrokerConfig) -> WebsocketServer:
 class TestAmqpBroker:
     @pytest.mark.asyncio
     async def test_amqp_broadcaster_send(self, amqp_ws_server: WebsocketServer):
-        with RunServer(amqp_ws_server):
+        with runserver(amqp_ws_server):
             async with websockets.connect(f"ws://{amqp_ws_server.addr()}/ws/amqp-test/") as ws:
                 broadcast(
                     groups=["amqp-test"],
@@ -171,7 +170,7 @@ class TestAmqpBroker:
 
     @pytest.mark.asyncio
     async def test_amqp_broadcaster_asend(self, amqp_ws_server: WebsocketServer):
-        with RunServer(amqp_ws_server):
+        with runserver(amqp_ws_server):
             async with websockets.connect(f"ws://{amqp_ws_server.addr()}/ws/amqp-test/") as ws:
                 await abroadcast(
                     groups=["amqp-test"],
@@ -183,7 +182,7 @@ class TestAmqpBroker:
 
     @pytest.mark.asyncio
     async def test_amqp_multiple_broadcasts(self, amqp_ws_server: WebsocketServer):
-        with RunServer(amqp_ws_server):
+        with runserver(amqp_ws_server):
             async with websockets.connect(f"ws://{amqp_ws_server.addr()}/ws/amqp-test/") as ws:
                 messages = ["first", "second", "third"]
                 for msg in messages:
@@ -203,7 +202,7 @@ class TestAmqpBroker:
 
     @pytest.mark.asyncio
     async def test_amqp_broadcast_to_multiple_clients(self, amqp_ws_server: WebsocketServer):
-        with RunServer(amqp_ws_server):
+        with runserver(amqp_ws_server):
             async with websockets.connect(f"ws://{amqp_ws_server.addr()}/ws/amqp-test/") as ws1:
                 async with websockets.connect(f"ws://{amqp_ws_server.addr()}/ws/amqp-test/") as ws2:
                     broadcast(groups=["amqp-test"], message="broadcast to all")
