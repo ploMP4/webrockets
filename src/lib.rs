@@ -9,6 +9,7 @@ use std::sync::{Arc, OnceLock};
 mod broker;
 mod callback;
 mod channel_store;
+mod client;
 mod connection;
 mod receive_handler;
 mod route;
@@ -77,6 +78,9 @@ mod webrockets {
     use pyo3::prelude::*;
 
     #[pymodule_export]
+    use super::client::client;
+
+    #[pymodule_export]
     use super::broker::abroadcast;
     #[pymodule_export]
     use super::broker::broadcast;
@@ -102,8 +106,21 @@ mod webrockets {
     use super::server::WebsocketServer;
 
     #[pymodule_init]
-    fn init(_: &Bound<'_, PyModule>) -> PyResult<()> {
+    fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {
         pyo3_log::init();
+
+        let py = m.py();
+        let sys_modules = py.import("sys")?.getattr("modules")?;
+        sys_modules.set_item("webrockets.client", m.getattr("client")?)?;
+        sys_modules.set_item(
+            "webrockets.client.sync",
+            m.getattr("client")?.getattr("sync")?,
+        )?;
+        sys_modules.set_item(
+            "webrockets.client.async",
+            m.getattr("client")?.getattr("async")?,
+        )?;
+
         Ok(())
     }
 }

@@ -31,6 +31,10 @@ redis = { version = "0.27", features = ["tokio-comp"] }
 lapin = { version = "2.5" }
 uuid = { version = "1", features = ["v4"] }
 async-trait = "0.1.89"
+hyper = { version = "1.8.1", features = ["client", "http1"] }
+hyper-util = { version = "0.1.19", features = ["tokio"] }
+http-body-util = "0.1.3"
+bytes = "1.11.0"
 
 [profile.release]
 lto = "fat"
