@@ -2,14 +2,18 @@ use bytes::Bytes;
 use http_body_util::Empty;
 use std::{future::Future, sync::LazyLock};
 
-use fastwebsockets::FragmentCollector;
+use fastwebsockets::{CloseCode, FragmentCollector, WebSocketError};
 use hyper::{
     header::{CONNECTION, UPGRADE},
     upgrade::Upgraded,
     Request, Uri,
 };
 use hyper_util::rt::TokioIo;
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
+use pyo3::{
+    exceptions::{PyException, PyRuntimeError},
+    prelude::*,
+    ToPyErr,
+};
 use tokio::{net::TcpStream, runtime::Runtime};
 
 use crate::client::config::ClientConfig;
@@ -17,6 +21,76 @@ use crate::client::config::ClientConfig;
 mod r#async;
 mod config;
 mod sync;
+
+#[pyclass(extends=PyException)]
+pub struct ConnectionClosed {
+    #[pyo3(get)]
+    pub code: u16,
+    #[pyo3(get)]
+    pub reason: String,
+}
+
+#[pymethods]
+impl ConnectionClosed {
+    #[new]
+    #[pyo3(signature = (code = 1000, reason = "".to_string()))]
+    fn new(code: u16, reason: String) -> Self {
+        ConnectionClosed { code, reason }
+    }
+
+    fn __str__(&self) -> String {
+        if self.reason.is_empty() {
+            format!("ConnectionClosed(code={})", self.code)
+        } else {
+            format!(
+                "ConnectionClosed(code={}, reason={:?})",
+                self.code, self.reason
+            )
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        self.__str__()
+    }
+}
+
+impl ToPyErr for ConnectionClosed {}
+
+#[pyclass(extends=PyException)]
+pub struct InvalidStatusCode {
+    #[pyo3(get)]
+    pub status_code: u16,
+}
+
+#[pymethods]
+impl InvalidStatusCode {
+    #[new]
+    fn new(status_code: u16) -> Self {
+        InvalidStatusCode { status_code }
+    }
+
+    fn __str__(&self) -> String {
+        format!("InvalidStatusCode(status_code={})", self.status_code)
+    }
+
+    fn __repr__(&self) -> String {
+        self.__str__()
+    }
+}
+
+impl ToPyErr for InvalidStatusCode {}
+
+/// Parse a WebSocket close frame payload into (code, reason).
+/// Close frame payload format: 2-byte big-endian code followed by UTF-8 reason.
+pub(crate) fn parse_close_payload(payload: &[u8]) -> (u16, String) {
+    if payload.len() >= 2 {
+        let code = u16::from_be_bytes([payload[0], payload[1]]);
+        let reason = std::str::from_utf8(&payload[2..]).unwrap_or("").to_string();
+        (code, reason)
+    } else {
+        (CloseCode::Status.into(), String::new())
+    }
+}
 
 pub(crate) static RUNTIME: LazyLock<Runtime> =
     LazyLock::new(|| Runtime::new().expect("unable to start client runtime"));
@@ -76,7 +150,12 @@ pub(crate) async fn ws_connect(
 
     let (ws, _) = fastwebsockets::handshake::client(&SpawnExecutor, req, stream)
         .await
-        .map_err(|e| PyRuntimeError::new_err(format!("error on client handshake: {e}")))?;
+        .map_err(|e| match e {
+            WebSocketError::InvalidStatusCode(status_code) => {
+                PyErr::new::<InvalidStatusCode, _>((status_code,))
+            }
+            _ => PyRuntimeError::new_err(format!("error on client handshake: {e}")),
+        })?;
 
     Ok(FragmentCollector::new(ws))
 }
@@ -93,4 +172,8 @@ pub(crate) mod client {
     use super::sync::connect;
     #[pymodule_export]
     use super::sync::Client;
+    #[pymodule_export]
+    use super::ConnectionClosed;
+    #[pymodule_export]
+    use super::InvalidStatusCode;
 }

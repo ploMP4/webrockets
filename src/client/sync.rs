@@ -5,7 +5,9 @@ use fastwebsockets::{CloseCode, FragmentCollector, Frame, OpCode, Payload};
 use hyper::upgrade::Upgraded;
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
-use crate::client::{config::ClientConfig, ws_connect, RUNTIME};
+use crate::client::{
+    config::ClientConfig, parse_close_payload, ws_connect, ConnectionClosed, RUNTIME,
+};
 
 #[pyclass]
 pub(crate) struct Client {
@@ -78,7 +80,10 @@ impl Client {
                 .into_any()
                 .unbind()),
             OpCode::Binary => Ok(frame.payload.into_pyobject(py)?.into_any().unbind()),
-            OpCode::Close => Err(PyRuntimeError::new_err("connection closed")),
+            OpCode::Close => {
+                let (code, reason) = parse_close_payload(&frame.payload);
+                Err(PyErr::new::<ConnectionClosed, _>((code, reason)))
+            }
             _ => Err(PyRuntimeError::new_err(format!(
                 "unexpected opcode: {:?}",
                 frame.opcode
@@ -113,11 +118,14 @@ impl Client {
         _exc: Py<PyAny>,
         _traceback: Py<PyAny>,
     ) -> PyResult<()> {
-        if exc_type.is_none() {
-            self.close(py, CloseCode::Normal.into(), "")
+        let code = if exc_type.is_none() {
+            CloseCode::Normal.into()
         } else {
-            self.close(py, CloseCode::Error.into(), "")
-        }
+            CloseCode::Error.into()
+        };
+        // Ignore errors when closing - connection may already be closed
+        let _ = self.close(py, code, "");
+        Ok(())
     }
 }
 

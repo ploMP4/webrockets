@@ -7,7 +7,7 @@ use fastwebsockets::{CloseCode, FragmentCollector, Frame, OpCode, Payload};
 use hyper::upgrade::Upgraded;
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
-use crate::client::{ws_connect, ClientConfig};
+use crate::client::{parse_close_payload, ws_connect, ClientConfig, ConnectionClosed};
 
 #[pyclass]
 pub(crate) struct AsyncClient {
@@ -86,7 +86,10 @@ impl AsyncClient {
                     .into_any()
                     .unbind()),
                 OpCode::Binary => Ok(frame.payload.into_pyobject(py)?.into_any().unbind()),
-                OpCode::Close => Err(PyRuntimeError::new_err("connection closed")),
+                OpCode::Close => {
+                    let (code, reason) = parse_close_payload(&frame.payload);
+                    Err(PyErr::new::<ConnectionClosed, _>((code, reason)))
+                }
                 _ => Err(PyRuntimeError::new_err(format!(
                     "unexpected opcode: {:?}",
                     frame.opcode
@@ -140,11 +143,24 @@ impl AsyncClient {
         _exc: Py<PyAny>,
         _traceback: Py<PyAny>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        if exc_type.is_none() {
-            self.close(py, CloseCode::Normal.into(), "".to_string())
+        let code = if exc_type.is_none() {
+            CloseCode::Normal.into()
         } else {
-            self.close(py, CloseCode::Error.into(), "".to_string())
-        }
+            CloseCode::Error.into()
+        };
+
+        let ws = self.ws.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            // Ignore errors when closing - connection may already be closed
+            if let Some(ws) = ws {
+                let _ = ws
+                    .lock()
+                    .await
+                    .write_frame(Frame::close(code, b""[..].into()))
+                    .await;
+            }
+            Ok(())
+        })
     }
 }
 
