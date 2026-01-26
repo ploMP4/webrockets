@@ -25,6 +25,8 @@ export default defineConfig({
                         { label: 'Pattern Matching', slug: 'guides/pattern-matching' },
                         { label: 'Broadcasting', slug: 'guides/broadcasting' },
                         { label: 'Logging', slug: 'guides/logging' },
+                        { label: 'Testing', slug: 'guides/testing' },
+                        { label: 'Debugging', slug: 'guides/debugging' },
                     ],
                 },
                 {
@@ -33,6 +35,7 @@ export default defineConfig({
                         { label: 'Setup', slug: 'django/setup' },
                         { label: 'Authentication', slug: 'django/authentication' },
                         { label: 'Broadcasting', slug: 'django/broadcasting' },
+                        { label: 'Testing', slug: 'django/testing' },
                         {
                             label: 'Deployment',
                             items: [
