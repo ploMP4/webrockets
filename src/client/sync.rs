@@ -1,74 +1,36 @@
-use bytes::Bytes;
-use http_body_util::Empty;
 use hyper_util::rt::TokioIo;
 use std::sync::Mutex;
 
 use fastwebsockets::{CloseCode, FragmentCollector, Frame, OpCode, Payload};
-use hyper::{
-    header::{CONNECTION, UPGRADE},
-    upgrade::Upgraded,
-    Request, Uri,
-};
+use hyper::upgrade::Upgraded;
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
-use tokio::net::TcpStream;
 
-use crate::client::{SpawnExecutor, RUNTIME};
+use crate::client::{config::ClientConfig, ws_connect, RUNTIME};
 
 #[pyclass]
-pub(super) struct Client {
+pub(crate) struct Client {
+    #[pyo3(get)]
+    config: ClientConfig,
+
     ws: Option<Mutex<FragmentCollector<TokioIo<Upgraded>>>>,
 }
 
 #[pymethods]
 impl Client {
     #[new]
-    fn __new__() -> Self {
-        Client { ws: None }
+    #[pyo3(signature=(config=None))]
+    fn __new__(config: Option<ClientConfig>) -> Self {
+        Client {
+            ws: None,
+            config: config.unwrap_or_default(),
+        }
     }
 
     fn connect(&mut self, py: Python<'_>, url: String) -> PyResult<()> {
         py.detach(|| {
-            RUNTIME.block_on(async {
-                let uri: Uri = url
-                    .parse()
-                    .map_err(|e| PyRuntimeError::new_err(format!("invalid URL: {e}")))?;
-
-                let host = uri
-                    .host()
-                    .ok_or_else(|| PyRuntimeError::new_err("URL missing host"))?;
-
-                let port = uri.port_u16().unwrap_or(80);
-                let addr = format!("{host}:{port}");
-
-                let stream = TcpStream::connect(&addr).await.map_err(|e| {
-                    PyRuntimeError::new_err(format!("unable to connect to {addr}: {e}"))
-                })?;
-
-                let req = Request::builder()
-                    .method("GET")
-                    .uri(&uri)
-                    .header("Host", &addr)
-                    .header(UPGRADE, "websocket")
-                    .header(CONNECTION, "upgrade")
-                    .header(
-                        "Sec-WebSocket-Key",
-                        fastwebsockets::handshake::generate_key(),
-                    )
-                    .header("Sec-WebSocket-Version", "13")
-                    .body(Empty::<Bytes>::new())
-                    .map_err(|e| {
-                        PyRuntimeError::new_err(format!("unable to construct request: {e}"))
-                    })?;
-
-                let (ws, _) = fastwebsockets::handshake::client(&SpawnExecutor, req, stream)
-                    .await
-                    .map_err(|e| {
-                        PyRuntimeError::new_err(format!("error on client handshake: {e}"))
-                    })?;
-
-                self.ws = Some(Mutex::new(FragmentCollector::new(ws)));
-                Ok(())
-            })
+            let ws = RUNTIME.block_on(ws_connect(self.config.clone(), url))?;
+            self.ws = Some(Mutex::new(ws));
+            Ok(())
         })
     }
 
@@ -160,8 +122,16 @@ impl Client {
 }
 
 #[pyfunction]
-pub(super) fn connect(py: Python<'_>, url: String) -> PyResult<Client> {
-    let mut client = Client { ws: None };
+#[pyo3(signature=(url, config=None))]
+pub(crate) fn connect(
+    py: Python<'_>,
+    url: String,
+    config: Option<ClientConfig>,
+) -> PyResult<Client> {
+    let mut client = Client {
+        ws: None,
+        config: config.unwrap_or_default(),
+    };
     client.connect(py, url)?;
     Ok(client)
 }

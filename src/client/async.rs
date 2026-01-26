@@ -1,63 +1,19 @@
 use std::sync::Arc;
 
-use bytes::Bytes;
-use http_body_util::Empty;
 use hyper_util::rt::TokioIo;
 use tokio::sync::Mutex;
 
 use fastwebsockets::{CloseCode, FragmentCollector, Frame, OpCode, Payload};
-use hyper::{
-    header::{CONNECTION, UPGRADE},
-    upgrade::Upgraded,
-    Request, Uri,
-};
+use hyper::upgrade::Upgraded;
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
-use tokio::net::TcpStream;
 
-use crate::client::SpawnExecutor;
-
-async fn do_connect(slf: &Py<AsyncClient>, url: String) -> PyResult<()> {
-    let uri: Uri = url
-        .parse()
-        .map_err(|e| PyRuntimeError::new_err(format!("invalid URL: {e}")))?;
-
-    let host = uri
-        .host()
-        .ok_or_else(|| PyRuntimeError::new_err("URL missing host"))?;
-
-    let port = uri.port_u16().unwrap_or(80);
-    let addr = format!("{host}:{port}");
-
-    let stream = TcpStream::connect(&addr)
-        .await
-        .map_err(|e| PyRuntimeError::new_err(format!("unable to connect to {addr}: {e}")))?;
-
-    let req = Request::builder()
-        .method("GET")
-        .uri(&uri)
-        .header("Host", &addr)
-        .header(UPGRADE, "websocket")
-        .header(CONNECTION, "upgrade")
-        .header(
-            "Sec-WebSocket-Key",
-            fastwebsockets::handshake::generate_key(),
-        )
-        .header("Sec-WebSocket-Version", "13")
-        .body(Empty::<Bytes>::new())
-        .map_err(|e| PyRuntimeError::new_err(format!("unable to construct request: {e}")))?;
-
-    let (ws, _) = fastwebsockets::handshake::client(&SpawnExecutor, req, stream)
-        .await
-        .map_err(|e| PyRuntimeError::new_err(format!("error on client handshake: {e}")))?;
-
-    Python::attach(|py| {
-        slf.borrow_mut(py).ws = Some(Arc::new(Mutex::new(FragmentCollector::new(ws))));
-        Ok(())
-    })
-}
+use crate::client::{ws_connect, ClientConfig};
 
 #[pyclass]
-pub(super) struct AsyncClient {
+pub(crate) struct AsyncClient {
+    #[pyo3(get)]
+    config: ClientConfig,
+
     ws: Option<Arc<Mutex<FragmentCollector<TokioIo<Upgraded>>>>>,
     pending_url: Option<String>,
 }
@@ -65,15 +21,23 @@ pub(super) struct AsyncClient {
 #[pymethods]
 impl AsyncClient {
     #[new]
-    fn __new__() -> Self {
+    #[pyo3(signature=(config=None))]
+    fn __new__(config: Option<ClientConfig>) -> Self {
         AsyncClient {
             ws: None,
             pending_url: None,
+            config: config.unwrap_or_default(),
         }
     }
 
     fn connect<'py>(slf: Py<Self>, py: Python<'py>, url: String) -> PyResult<Bound<'py, PyAny>> {
-        pyo3_async_runtimes::tokio::future_into_py(py, async move { do_connect(&slf, url).await })
+        let config = slf.borrow(py).config.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let ws = ws_connect(config, url).await?;
+            Python::attach(|py| slf.borrow_mut(py).ws = Some(Arc::new(Mutex::new(ws))));
+            Ok(())
+        })
     }
 
     fn send<'py>(&self, py: Python<'py>, data: Bound<'_, PyAny>) -> PyResult<Bound<'py, PyAny>> {
@@ -154,6 +118,7 @@ impl AsyncClient {
     }
 
     fn __aenter__<'py>(slf: Bound<'py, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let config = slf.borrow().config.clone();
         let url = slf
             .borrow()
             .pending_url
@@ -162,7 +127,8 @@ impl AsyncClient {
 
         let slf = slf.unbind();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            do_connect(&slf, url).await?;
+            let ws = ws_connect(config, url).await?;
+            Python::attach(|py| slf.borrow_mut(py).ws = Some(Arc::new(Mutex::new(ws))));
             Ok(slf)
         })
     }
@@ -183,9 +149,11 @@ impl AsyncClient {
 }
 
 #[pyfunction]
-pub(super) fn aconnect(url: String) -> AsyncClient {
+#[pyo3(signature=(url, config=None))]
+pub(crate) fn aconnect(url: String, config: Option<ClientConfig>) -> AsyncClient {
     AsyncClient {
         ws: None,
         pending_url: Some(url),
+        config: config.unwrap_or_default(),
     }
 }
