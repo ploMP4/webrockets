@@ -2,7 +2,6 @@ import asyncio
 import json
 
 import pytest
-import websockets
 from testcontainers.rabbitmq import RabbitMqContainer
 from testcontainers.redis import RedisContainer
 from webrockets import (
@@ -14,6 +13,7 @@ from webrockets import (
     reset_broadcast,
     setup_broadcast,
 )
+from webrockets.client import aconnect
 from webrockets.test import runserver
 
 
@@ -51,7 +51,7 @@ class TestRedisBroker:
     @pytest.mark.asyncio
     async def test_redis_broadcaster_send(self, redis_ws_server: WebsocketServer):
         with runserver(redis_ws_server):
-            async with websockets.connect(f"ws://{redis_ws_server.addr()}/ws/redis-test/") as ws:
+            async with aconnect(f"ws://{redis_ws_server.addr()}/ws/redis-test/") as ws:
                 broadcast(
                     groups=["redis-test"],
                     message=json.dumps({"type": "test", "data": "hello from redis"}),
@@ -63,7 +63,7 @@ class TestRedisBroker:
     @pytest.mark.asyncio
     async def test_redis_broadcaster_asend(self, redis_ws_server: WebsocketServer):
         with runserver(redis_ws_server):
-            async with websockets.connect(f"ws://{redis_ws_server.addr()}/ws/redis-test/") as ws:
+            async with aconnect(f"ws://{redis_ws_server.addr()}/ws/redis-test/") as ws:
                 await abroadcast(
                     groups=["redis-test"],
                     message=json.dumps({"type": "async_test", "data": "async hello"}),
@@ -75,7 +75,7 @@ class TestRedisBroker:
     @pytest.mark.asyncio
     async def test_redis_multiple_broadcasts(self, redis_ws_server: WebsocketServer):
         with runserver(redis_ws_server):
-            async with websockets.connect(f"ws://{redis_ws_server.addr()}/ws/redis-test/") as ws:
+            async with aconnect(f"ws://{redis_ws_server.addr()}/ws/redis-test/") as ws:
                 messages = ["first", "second", "third"]
                 for msg in messages:
                     broadcast(groups=["redis-test"], message=msg)
@@ -95,10 +95,8 @@ class TestRedisBroker:
     @pytest.mark.asyncio
     async def test_redis_broadcast_to_multiple_clients(self, redis_ws_server: WebsocketServer):
         with runserver(redis_ws_server):
-            async with websockets.connect(f"ws://{redis_ws_server.addr()}/ws/redis-test/") as ws1:
-                async with websockets.connect(
-                    f"ws://{redis_ws_server.addr()}/ws/redis-test/"
-                ) as ws2:
+            async with aconnect(f"ws://{redis_ws_server.addr()}/ws/redis-test/") as ws1:
+                async with aconnect(f"ws://{redis_ws_server.addr()}/ws/redis-test/") as ws2:
                     broadcast(groups=["redis-test"], message="broadcast to all")
 
                     r1 = await asyncio.wait_for(ws1.recv(), timeout=2.0)
@@ -116,9 +114,7 @@ class TestRedisBroker:
             broadcast(groups=["redis-test"], message="broadcast to all")
 
         with runserver(redis_ws_server):
-            async with websockets.connect(
-                f"ws://{redis_ws_server.addr()}/ws/redis-test-broadcast/"
-            ) as ws:
+            async with aconnect(f"ws://{redis_ws_server.addr()}/ws/redis-test-broadcast/") as ws:
                 await ws.send("hi")
                 r = await asyncio.wait_for(ws.recv(), timeout=2.0)
                 assert "broadcast to all" in str(r)
@@ -159,7 +155,7 @@ class TestAmqpBroker:
     @pytest.mark.asyncio
     async def test_amqp_broadcaster_send(self, amqp_ws_server: WebsocketServer):
         with runserver(amqp_ws_server):
-            async with websockets.connect(f"ws://{amqp_ws_server.addr()}/ws/amqp-test/") as ws:
+            async with aconnect(f"ws://{amqp_ws_server.addr()}/ws/amqp-test/") as ws:
                 broadcast(
                     groups=["amqp-test"],
                     message=json.dumps({"type": "test", "data": "hello from amqp"}),
@@ -171,7 +167,7 @@ class TestAmqpBroker:
     @pytest.mark.asyncio
     async def test_amqp_broadcaster_asend(self, amqp_ws_server: WebsocketServer):
         with runserver(amqp_ws_server):
-            async with websockets.connect(f"ws://{amqp_ws_server.addr()}/ws/amqp-test/") as ws:
+            async with aconnect(f"ws://{amqp_ws_server.addr()}/ws/amqp-test/") as ws:
                 await abroadcast(
                     groups=["amqp-test"],
                     message=json.dumps({"type": "async_test", "data": "async hello"}),
@@ -183,7 +179,7 @@ class TestAmqpBroker:
     @pytest.mark.asyncio
     async def test_amqp_multiple_broadcasts(self, amqp_ws_server: WebsocketServer):
         with runserver(amqp_ws_server):
-            async with websockets.connect(f"ws://{amqp_ws_server.addr()}/ws/amqp-test/") as ws:
+            async with aconnect(f"ws://{amqp_ws_server.addr()}/ws/amqp-test/") as ws:
                 messages = ["first", "second", "third"]
                 for msg in messages:
                     broadcast(groups=["amqp-test"], message=msg)
@@ -203,8 +199,8 @@ class TestAmqpBroker:
     @pytest.mark.asyncio
     async def test_amqp_broadcast_to_multiple_clients(self, amqp_ws_server: WebsocketServer):
         with runserver(amqp_ws_server):
-            async with websockets.connect(f"ws://{amqp_ws_server.addr()}/ws/amqp-test/") as ws1:
-                async with websockets.connect(f"ws://{amqp_ws_server.addr()}/ws/amqp-test/") as ws2:
+            async with aconnect(f"ws://{amqp_ws_server.addr()}/ws/amqp-test/") as ws1:
+                async with aconnect(f"ws://{amqp_ws_server.addr()}/ws/amqp-test/") as ws2:
                     broadcast(groups=["amqp-test"], message="broadcast to all")
 
                     r1 = await asyncio.wait_for(ws1.recv(), timeout=2.0)

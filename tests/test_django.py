@@ -2,12 +2,11 @@ import asyncio
 import json
 
 import pytest
-import websockets
 from django.db import models
 from webrockets import Connection, WebsocketServer
+from webrockets.client import ClientConfig, InvalidStatusCode, aconnect, connect
 from webrockets.django.auth import SessionAuthentication
 from webrockets.test import runserver
-from websockets.sync.client import connect as connect_sync
 
 
 class Message(models.Model):
@@ -32,7 +31,7 @@ class TestDjangoORM:
             conn.send(json.dumps({"created": True, "count": count}))
 
         with runserver(ws_server):
-            with connect_sync(f"ws://{ws_server.addr()}/ws/orm/") as ws:
+            with connect(f"ws://{ws_server.addr()}/ws/orm/") as ws:
                 ws.send("test message")
                 response = ws.recv()
                 data = json.loads(response)
@@ -52,7 +51,7 @@ class TestDjangoORM:
             conn.send(json.dumps([{"id": m.id, "content": m.content} for m in messages]))
 
         with runserver(ws_server):
-            with connect_sync(f"ws://{ws_server.addr()}/ws/orm/") as ws:
+            with connect(f"ws://{ws_server.addr()}/ws/orm/") as ws:
                 ws.send("query")
                 response = ws.recv()
                 data = json.loads(response)
@@ -73,7 +72,7 @@ class TestDjangoORM:
             conn.send(json.dumps({"id": updated.id, "content": updated.content}))
 
         with runserver(ws_server):
-            with connect_sync(f"ws://{ws_server.addr()}/ws/orm/") as ws:
+            with connect(f"ws://{ws_server.addr()}/ws/orm/") as ws:
                 ws.send(json.dumps({"id": msg.id, "content": "updated"}))
                 response = ws.recv()
                 data = json.loads(response)
@@ -92,7 +91,7 @@ class TestDjangoORM:
             conn.send(json.dumps({"deleted": deleted}))
 
         with runserver(ws_server):
-            with connect_sync(f"ws://{ws_server.addr()}/ws/orm/") as ws:
+            with connect(f"ws://{ws_server.addr()}/ws/orm/") as ws:
                 ws.send(json.dumps({"id": msg.id}))
                 response = ws.recv()
                 data = json.loads(response)
@@ -113,7 +112,7 @@ class TestDjangoORM:
             await conn.asend(json.dumps({"id": msg.id, "content": msg.content}))
 
         with runserver(ws_server):
-            async with websockets.connect(f"ws://{ws_server.addr()}/ws/orm/") as ws:
+            async with aconnect(f"ws://{ws_server.addr()}/ws/orm/") as ws:
                 await ws.send("async message")
                 response = await asyncio.wait_for(ws.recv(), timeout=2.0)
                 data = json.loads(response)
@@ -135,9 +134,11 @@ class TestDjangoSessionAuth:
             conn.send(json.dumps({"user_id": conn.user.id, "username": conn.user.username}))
 
         with runserver(ws_server):
-            with connect_sync(
+            with connect(
                 f"ws://{ws_server.addr()}/ws/auth/",
-                additional_headers={"Cookie": f"sessionid={session.session_key}"},
+                config=ClientConfig(
+                    extra_headers={"Cookie": f"sessionid={session.session_key}"},
+                ),
             ) as ws:
                 response = ws.recv()
                 data = json.loads(response)
@@ -153,14 +154,14 @@ class TestDjangoSessionAuth:
             conn.send("connected")
 
         with runserver(ws_server):
-            with pytest.raises(websockets.exceptions.InvalidStatus) as exc_info:
-                with connect_sync(
+            with pytest.raises(InvalidStatusCode) as exc_info:
+                with connect(
                     f"ws://{ws_server.addr()}/ws/auth/",
-                    additional_headers={"Cookie": "sessionid=invalid-session"},
+                    config=ClientConfig(extra_headers={"Cookie": "sessionid=invalid-session"}),
                 ):
                     pass
 
-            assert exc_info.value.response.status_code == 401
+            assert exc_info.value.status_code == 401
 
     def test_session_auth_no_session(self, ws_server: WebsocketServer):
         """Test websocket connection rejection without session cookie."""
@@ -171,11 +172,11 @@ class TestDjangoSessionAuth:
             conn.send("connected")
 
         with runserver(ws_server):
-            with pytest.raises(websockets.exceptions.InvalidStatus) as exc_info:
-                with connect_sync(f"ws://{ws_server.addr()}/ws/auth/"):
+            with pytest.raises(InvalidStatusCode) as exc_info:
+                with connect(f"ws://{ws_server.addr()}/ws/auth/"):
                     pass
 
-            assert exc_info.value.response.status_code == 401
+            assert exc_info.value.status_code == 401
 
     def test_session_auth_inactive_user(
         self, ws_server: WebsocketServer, session_store, inactive_user
@@ -192,14 +193,16 @@ class TestDjangoSessionAuth:
             conn.send("connected")
 
         with runserver(ws_server):
-            with pytest.raises(websockets.exceptions.InvalidStatus) as exc_info:
-                with connect_sync(
+            with pytest.raises(InvalidStatusCode) as exc_info:
+                with connect(
                     f"ws://{ws_server.addr()}/ws/auth/",
-                    additional_headers={"Cookie": f"sessionid={session.session_key}"},
+                    config=ClientConfig(
+                        extra_headers={"Cookie": f"sessionid={session.session_key}"}
+                    ),
                 ):
                     pass
 
-            assert exc_info.value.response.status_code == 401
+            assert exc_info.value.status_code == 401
 
     def test_authenticated_user_in_receive_handler(
         self, ws_server: WebsocketServer, create_session, active_user
@@ -219,9 +222,9 @@ class TestDjangoSessionAuth:
             )
 
         with runserver(ws_server):
-            with connect_sync(
+            with connect(
                 f"ws://{ws_server.addr()}/ws/auth/",
-                additional_headers={"Cookie": f"sessionid={session.session_key}"},
+                config=ClientConfig(extra_headers={"Cookie": f"sessionid={session.session_key}"}),
             ) as ws:
                 ws.send("hello")
                 response = ws.recv()
@@ -248,7 +251,7 @@ class TestDjangoCacheIntegration:
                 conn.send(json.dumps({"value": value}))
 
         with runserver(ws_server):
-            with connect_sync(f"ws://{ws_server.addr()}/ws/cache/") as ws:
+            with connect(f"ws://{ws_server.addr()}/ws/cache/") as ws:
                 ws.send(json.dumps({"action": "set", "key": "ws_test", "value": "cached"}))
                 response = ws.recv()
                 assert json.loads(response)["status"] == "set"
