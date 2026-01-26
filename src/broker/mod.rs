@@ -15,12 +15,12 @@ use crate::channel_store::ChannelStore;
 use crate::Message;
 
 #[async_trait]
-pub(super) trait Broker {
+pub(crate) trait Broker {
     async fn listen(&self, channels: Arc<ChannelStore>, shutdown: watch::Receiver<bool>);
     async fn send(&self, payload: String) -> PyResult<()>;
 }
 
-pub(super) fn get_broker(config: &config::BrokerConfig) -> Box<dyn Broker + Send + Sync> {
+pub(crate) fn get_broker(config: &config::BrokerConfig) -> Box<dyn Broker + Send + Sync> {
     match config {
         config::BrokerConfig::Redis(cfg) => Box::new(redis::Redis::new(cfg)),
         config::BrokerConfig::Amqp(cfg) => Box::new(amqp::Amqp::new(cfg)),
