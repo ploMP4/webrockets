@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 # Create the chat route (no authentication for this example)
-chat = server.create_route("ws/chat/", "chat")
+chat = server.create_route("ws/chat/")
 
 
 @chat.connect("after")
