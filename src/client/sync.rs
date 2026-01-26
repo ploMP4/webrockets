@@ -15,7 +15,7 @@ use tokio::net::TcpStream;
 use crate::client::{SpawnExecutor, RUNTIME};
 
 #[pyclass]
-struct Client {
+pub(super) struct Client {
     ws: Option<Mutex<FragmentCollector<TokioIo<Upgraded>>>>,
 }
 
@@ -160,16 +160,8 @@ impl Client {
 }
 
 #[pyfunction]
-fn connect(py: Python<'_>, url: String) -> PyResult<Client> {
+pub(super) fn connect(py: Python<'_>, url: String) -> PyResult<Client> {
     let mut client = Client { ws: None };
     client.connect(py, url)?;
     Ok(client)
-}
-
-#[pymodule]
-pub(super) mod sync {
-    #[pymodule_export]
-    use super::connect;
-    #[pymodule_export]
-    use super::Client;
 }

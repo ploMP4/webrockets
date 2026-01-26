@@ -112,14 +112,6 @@ mod webrockets {
         let py = m.py();
         let sys_modules = py.import("sys")?.getattr("modules")?;
         sys_modules.set_item("webrockets.client", m.getattr("client")?)?;
-        sys_modules.set_item(
-            "webrockets.client.sync",
-            m.getattr("client")?.getattr("sync")?,
-        )?;
-        sys_modules.set_item(
-            "webrockets.client.async",
-            m.getattr("client")?.getattr("async")?,
-        )?;
 
         Ok(())
     }

@@ -24,7 +24,11 @@ where
 #[pymodule]
 pub(crate) mod client {
     #[pymodule_export]
-    use super::r#async::async_client;
+    use super::r#async::aconnect;
     #[pymodule_export]
-    use super::sync::sync;
+    use super::r#async::AsyncClient;
+    #[pymodule_export]
+    use super::sync::connect;
+    #[pymodule_export]
+    use super::sync::Client;
 }
