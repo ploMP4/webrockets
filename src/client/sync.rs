@@ -97,12 +97,12 @@ impl Client {
             let mut guard = self
                 .ws
                 .as_ref()
-                .ok_or_else(|| PyRuntimeError::new_err(format!("no websocket connection")))?
+                .ok_or_else(|| PyRuntimeError::new_err("no websocket connection"))?
                 .lock()
                 .map_err(|e| PyRuntimeError::new_err(format!("poisoned lock: {e}")))?;
 
             RUNTIME
-                .block_on(guard.write_frame(Frame::close(code, reason.as_bytes().into())))
+                .block_on(guard.write_frame(Frame::close(code, reason.as_bytes())))
                 .map_err(|e| PyRuntimeError::new_err(format!("{e}")))
         })
     }

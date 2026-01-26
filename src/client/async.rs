@@ -114,7 +114,7 @@ impl AsyncClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             ws.lock()
                 .await
-                .write_frame(Frame::close(code, reason.as_bytes().into()))
+                .write_frame(Frame::close(code, reason.as_bytes()))
                 .await
                 .map_err(|e| PyRuntimeError::new_err(format!("{e}")))
         })
