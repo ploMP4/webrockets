@@ -9,6 +9,16 @@ This page presents benchmark results comparing webrockets against other popular 
 
 All benchmarks were run using Docker containers on the same host machine. The benchmark client is written in C using [uSockets](https://github.com/uNetworking/uSockets) for maximum client-side performance, ensuring the bottleneck is always the server.
 
+### Hardware
+
+| Component | Specification |
+|-----------|---------------|
+| **Model** | Lenovo Thinkpad E16 |
+| **CPU** | 13th Gen Intel Core i7-1355U (12 cores) |
+| **RAM** | 16 GB |
+| **OS** | EndeavourOS (Arch Linux) |
+| **Kernel** | 6.12.61-1-lts |
+
 ### Servers Tested
 
 | Server | Description |

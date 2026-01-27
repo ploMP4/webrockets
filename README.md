@@ -22,6 +22,8 @@ webrockets significantly outperforms other Python WebSocket implementations than
 
 In a simple echo benchmark with 100 concurrent connections, webrockets achieves up to **10x higher throughput** compared to Django Channels with Daphne. See the [full benchmark results](https://webrockets.io/benchmarks/) for detailed comparisons across different scenarios.
 
+**Benchmark machine:** Thinkpad E16, Intel Core i7-1355U (12 cores), 16 GB RAM, EndeavourOS Linux (kernel 6.12.61-1-lts)
+
 ## Installation
 
 ```bash
