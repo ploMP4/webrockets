@@ -474,6 +474,8 @@ impl WebsocketServer {
         default_group: Option<String>,
         authentication_classes: Option<Vec<Py<PyAny>>>,
     ) -> PyResult<Py<WebsocketRoute>> {
+        let path = path.strip_prefix('/').unwrap_or(&path).to_string();
+
         self.context
             .blocking_write()
             .push((default_group.clone(), path.clone()));
