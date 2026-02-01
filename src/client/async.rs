@@ -40,6 +40,76 @@ impl AsyncClient {
         })
     }
 
+    #[pyo3(signature=(data=None))]
+    fn ping<'py>(
+        &self,
+        py: Python<'py>,
+        data: Option<Bound<'_, PyAny>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let payload = match data {
+            Some(data) => {
+                if let Ok(s) = data.extract::<String>() {
+                    Payload::Owned(s.into_bytes())
+                } else if let Ok(b) = data.extract::<&[u8]>() {
+                    Payload::Owned(b.to_vec())
+                } else {
+                    return Err(PyRuntimeError::new_err("data must be str or bytes"));
+                }
+            }
+            None => Payload::Owned(Vec::new()),
+        };
+
+        let frame = Frame::new(true, OpCode::Ping, None, payload);
+        let ws = self
+            .ws
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("no websocket connection"))?
+            .clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            ws.lock()
+                .await
+                .write_frame(frame)
+                .await
+                .map_err(|e| PyRuntimeError::new_err(format!("failed to send frame: {e}")))
+        })
+    }
+
+    #[pyo3(signature=(data=None))]
+    fn pong<'py>(
+        &self,
+        py: Python<'py>,
+        data: Option<Bound<'_, PyAny>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let payload = match data {
+            Some(data) => {
+                if let Ok(s) = data.extract::<String>() {
+                    Payload::Owned(s.into_bytes())
+                } else if let Ok(b) = data.extract::<&[u8]>() {
+                    Payload::Owned(b.to_vec())
+                } else {
+                    return Err(PyRuntimeError::new_err("data must be str or bytes"));
+                }
+            }
+            None => Payload::Owned(Vec::new()),
+        };
+
+        let frame = Frame::pong(payload);
+        let ws = self
+            .ws
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("no websocket connection"))?
+            .clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            ws.lock()
+                .await
+                .write_frame(frame)
+                .await
+                .map_err(|e| PyRuntimeError::new_err(format!("failed to send frame: {e}")))
+        })
+    }
+
     fn send<'py>(&self, py: Python<'py>, data: Bound<'_, PyAny>) -> PyResult<Bound<'py, PyAny>> {
         let frame = if let Ok(s) = data.extract::<String>() {
             Frame::text(Payload::Owned(s.into_bytes()))

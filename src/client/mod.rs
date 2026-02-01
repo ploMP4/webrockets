@@ -22,6 +22,9 @@ mod r#async;
 mod config;
 mod sync;
 
+pub(crate) static RUNTIME: LazyLock<Runtime> =
+    LazyLock::new(|| Runtime::new().expect("unable to start client runtime"));
+
 #[pyclass(extends=PyException)]
 pub struct ConnectionClosed {
     #[pyo3(get)]
@@ -91,9 +94,6 @@ pub(crate) fn parse_close_payload(payload: &[u8]) -> (u16, String) {
         (CloseCode::Status.into(), String::new())
     }
 }
-
-pub(crate) static RUNTIME: LazyLock<Runtime> =
-    LazyLock::new(|| Runtime::new().expect("unable to start client runtime"));
 
 pub(crate) struct SpawnExecutor;
 

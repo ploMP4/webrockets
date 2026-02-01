@@ -4,6 +4,7 @@ use std::collections::HashMap;
 #[pyclass]
 #[derive(Default, Clone)]
 pub(crate) struct ClientConfig {
+    #[pyo3(get)]
     pub(crate) extra_headers: Option<HashMap<String, String>>,
 }
 

@@ -164,6 +164,30 @@ close(code: int = 1000, reason: str = "") -> None
 | `code` | `int` | `1000` | WebSocket close code |
 | `reason` | `str` | `""` | Close reason string |
 
+##### ping
+
+Send a ping frame to the server.
+
+```python
+ping(data: str | bytes | None = None) -> None
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `data` | `str \| bytes \| None` | `None` | Optional payload data to include in the ping frame |
+
+##### pong
+
+Send a pong frame to the server.
+
+```python
+pong(data: str | bytes | None = None) -> None
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `data` | `str \| bytes \| None` | `None` | Optional payload data to include in the pong frame |
+
 #### Context Manager
 
 `Client` supports the context manager protocol:
@@ -228,6 +252,30 @@ Close the WebSocket connection.
 ```python
 async close(code: int = 1000, reason: str = "") -> None
 ```
+
+##### ping
+
+Send a ping frame to the server.
+
+```python
+async ping(data: str | bytes | None = None) -> None
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `data` | `str \| bytes \| None` | `None` | Optional payload data to include in the ping frame |
+
+##### pong
+
+Send a pong frame to the server.
+
+```python
+async pong(data: str | bytes | None = None) -> None
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `data` | `str \| bytes \| None` | `None` | Optional payload data to include in the pong frame |
 
 #### Async Context Manager
 

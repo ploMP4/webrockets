@@ -36,6 +36,66 @@ impl Client {
         })
     }
 
+    #[pyo3(signature=(data=None))]
+    fn ping(&self, py: Python<'_>, data: Option<Bound<'_, PyAny>>) -> PyResult<()> {
+        let payload = match data {
+            Some(data) => {
+                if let Ok(s) = data.extract::<String>() {
+                    Payload::Owned(s.into_bytes())
+                } else if let Ok(b) = data.extract::<&[u8]>() {
+                    Payload::Owned(b.to_vec())
+                } else {
+                    return Err(PyRuntimeError::new_err("data must be str or bytes"));
+                }
+            }
+            None => Payload::Owned(Vec::new()),
+        };
+
+        py.detach(|| {
+            let frame = Frame::new(true, OpCode::Ping, None, payload);
+            let mut guard = self
+                .ws
+                .as_ref()
+                .ok_or_else(|| PyRuntimeError::new_err("no websocket connection"))?
+                .lock()
+                .map_err(|e| PyRuntimeError::new_err(format!("poisoned lock: {e}")))?;
+
+            RUNTIME
+                .block_on(guard.write_frame(frame))
+                .map_err(|e| PyRuntimeError::new_err(format!("{e}")))
+        })
+    }
+
+    #[pyo3(signature=(data=None))]
+    fn pong(&self, py: Python<'_>, data: Option<Bound<'_, PyAny>>) -> PyResult<()> {
+        let payload = match data {
+            Some(data) => {
+                if let Ok(s) = data.extract::<String>() {
+                    Payload::Owned(s.into_bytes())
+                } else if let Ok(b) = data.extract::<&[u8]>() {
+                    Payload::Owned(b.to_vec())
+                } else {
+                    return Err(PyRuntimeError::new_err("data must be str or bytes"));
+                }
+            }
+            None => Payload::Owned(Vec::new()),
+        };
+
+        py.detach(|| {
+            let frame = Frame::pong(payload);
+            let mut guard = self
+                .ws
+                .as_ref()
+                .ok_or_else(|| PyRuntimeError::new_err("no websocket connection"))?
+                .lock()
+                .map_err(|e| PyRuntimeError::new_err(format!("poisoned lock: {e}")))?;
+
+            RUNTIME
+                .block_on(guard.write_frame(frame))
+                .map_err(|e| PyRuntimeError::new_err(format!("{e}")))
+        })
+    }
+
     fn send(&self, py: Python<'_>, data: Bound<'_, PyAny>) -> PyResult<()> {
         let frame = if let Ok(s) = data.extract::<String>() {
             Frame::text(Payload::Owned(s.into_bytes()))
