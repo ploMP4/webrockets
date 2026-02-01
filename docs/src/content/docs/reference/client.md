@@ -144,12 +144,18 @@ send(data: str | bytes) -> None
 Receive a message from the server. Blocks until a message is received.
 
 ```python
-recv() -> str | bytes
+recv(timeout: int | None = None) -> str | bytes
 ```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `timeout` | `int \| None` | `None` | Optional timeout in milliseconds. If `None`, blocks indefinitely. |
 
 **Returns:** The received message. Text frames return `str`, binary frames return `bytes`.
 
-**Raises:** `ConnectionClosed` if the server closes the connection.
+**Raises:**
+- `ConnectionClosed` if the server closes the connection.
+- `TimeoutError` if the timeout is reached before a message is received.
 
 ##### close
 
@@ -240,10 +246,18 @@ async send(data: str | bytes) -> None
 Receive a message from the server.
 
 ```python
-async recv() -> str | bytes
+async recv(timeout: int | None = None) -> str | bytes
 ```
 
-**Raises:** `ConnectionClosed` if the server closes the connection.
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `timeout` | `int \| None` | `None` | Optional timeout in milliseconds. If `None`, blocks indefinitely. |
+
+**Returns:** The received message. Text frames return `str`, binary frames return `bytes`.
+
+**Raises:**
+- `ConnectionClosed` if the server closes the connection.
+- `TimeoutError` if the timeout is reached before a message is received.
 
 ##### close
 

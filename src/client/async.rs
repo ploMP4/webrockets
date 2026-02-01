@@ -1,11 +1,14 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use hyper_util::rt::TokioIo;
 use tokio::sync::Mutex;
 
 use fastwebsockets::{CloseCode, FragmentCollector, Frame, OpCode, Payload};
 use hyper::upgrade::Upgraded;
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
+use pyo3::{
+    exceptions::{PyRuntimeError, PyTimeoutError},
+    prelude::*,
+};
 
 use crate::client::{parse_close_payload, ws_connect, ClientConfig, ConnectionClosed};
 
@@ -134,7 +137,8 @@ impl AsyncClient {
         })
     }
 
-    fn recv<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    #[pyo3(signature=(timeout=None))]
+    fn recv<'py>(&self, py: Python<'py>, timeout: Option<u64>) -> PyResult<Bound<'py, PyAny>> {
         let ws = self
             .ws
             .as_ref()
@@ -142,12 +146,21 @@ impl AsyncClient {
             .clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let frame = ws
-                .lock()
+            let frame = match timeout {
+                Some(millis) => tokio::time::timeout(
+                    Duration::from_millis(millis),
+                    ws.lock().await.read_frame(),
+                )
                 .await
-                .read_frame()
-                .await
-                .map_err(|e| PyRuntimeError::new_err(format!("{e}")))?;
+                .map_err(|_| PyTimeoutError::new_err("recv timed out"))?
+                .map_err(|e| PyRuntimeError::new_err(format!("{e}")))?,
+                None => ws
+                    .lock()
+                    .await
+                    .read_frame()
+                    .await
+                    .map_err(|e| PyRuntimeError::new_err(format!("{e}")))?,
+            };
 
             Python::attach(|py| match frame.opcode {
                 OpCode::Text => Ok(std::str::from_utf8(&frame.payload)

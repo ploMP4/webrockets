@@ -1,9 +1,12 @@
 use hyper_util::rt::TokioIo;
-use std::sync::Mutex;
+use std::{sync::Mutex, time::Duration};
 
 use fastwebsockets::{CloseCode, FragmentCollector, Frame, OpCode, Payload};
 use hyper::upgrade::Upgraded;
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
+use pyo3::{
+    exceptions::{PyRuntimeError, PyTimeoutError},
+    prelude::*,
+};
 
 use crate::client::{
     config::ClientConfig, parse_close_payload, ws_connect, ConnectionClosed, RUNTIME,
@@ -119,7 +122,8 @@ impl Client {
         })
     }
 
-    fn recv(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+    #[pyo3(signature=(timeout=None))]
+    fn recv(&self, py: Python<'_>, timeout: Option<u64>) -> PyResult<Py<PyAny>> {
         let frame = py.detach(|| {
             let mut guard = self
                 .ws
@@ -128,9 +132,20 @@ impl Client {
                 .lock()
                 .map_err(|e| PyRuntimeError::new_err(format!("poisoned lock: {e}")))?;
 
-            RUNTIME
-                .block_on(guard.read_frame())
-                .map_err(|e| PyRuntimeError::new_err(format!("{e}")))
+            RUNTIME.block_on(async {
+                match timeout {
+                    Some(millis) => {
+                        tokio::time::timeout(Duration::from_millis(millis), guard.read_frame())
+                            .await
+                            .map_err(|_| PyTimeoutError::new_err("recv timed out"))?
+                            .map_err(|e| PyRuntimeError::new_err(format!("{e}")))
+                    }
+                    None => guard
+                        .read_frame()
+                        .await
+                        .map_err(|e| PyRuntimeError::new_err(format!("{e}"))),
+                }
+            })
         })?;
 
         match frame.opcode {
