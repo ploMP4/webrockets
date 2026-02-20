@@ -31,9 +31,21 @@ impl Client {
         }
     }
 
-    fn connect(&mut self, py: Python<'_>, url: String) -> PyResult<()> {
+    #[pyo3(signature=(url, timeout=None))]
+    fn connect(&mut self, py: Python<'_>, url: String, timeout: Option<u64>) -> PyResult<()> {
         py.detach(|| {
-            let ws = RUNTIME.block_on(ws_connect(self.config.clone(), url))?;
+            let ws = RUNTIME.block_on(async {
+                match timeout {
+                    Some(millis) => tokio::time::timeout(
+                        Duration::from_millis(millis),
+                        ws_connect(self.config.clone(), url),
+                    )
+                    .await
+                    .map_err(|_| PyTimeoutError::new_err("connect timed out"))?
+                    .map_err(|e| PyRuntimeError::new_err(format!("{e}"))),
+                    None => ws_connect(self.config.clone(), url).await,
+                }
+            })?;
             self.ws = Some(Mutex::new(ws));
             Ok(())
         })
@@ -205,16 +217,17 @@ impl Client {
 }
 
 #[pyfunction]
-#[pyo3(signature=(url, config=None))]
+#[pyo3(signature=(url, config=None, timeout=None))]
 pub(crate) fn connect(
     py: Python<'_>,
     url: String,
     config: Option<ClientConfig>,
+    timeout: Option<u64>,
 ) -> PyResult<Client> {
     let mut client = Client {
         ws: None,
         config: config.unwrap_or_default(),
     };
-    client.connect(py, url)?;
+    client.connect(py, url, timeout)?;
     Ok(client)
 }

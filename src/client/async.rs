@@ -19,6 +19,7 @@ pub(crate) struct AsyncClient {
 
     ws: Option<Arc<Mutex<FragmentCollector<TokioIo<Upgraded>>>>>,
     pending_url: Option<String>,
+    pending_timeout: Option<u64>,
 }
 
 #[pymethods]
@@ -30,14 +31,29 @@ impl AsyncClient {
             ws: None,
             pending_url: None,
             config: config.unwrap_or_default(),
+            pending_timeout: None,
         }
     }
 
-    fn connect<'py>(slf: Py<Self>, py: Python<'py>, url: String) -> PyResult<Bound<'py, PyAny>> {
+    #[pyo3(signature=(url, timeout=None))]
+    fn connect<'py>(
+        slf: Py<Self>,
+        py: Python<'py>,
+        url: String,
+        timeout: Option<u64>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let config = slf.borrow(py).config.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let ws = ws_connect(config, url).await?;
+            let ws = match timeout {
+                Some(millis) => {
+                    tokio::time::timeout(Duration::from_millis(millis), ws_connect(config, url))
+                        .await
+                        .map_err(|_| PyTimeoutError::new_err("connect timed out"))?
+                        .map_err(|e| PyRuntimeError::new_err(format!("{e}")))?
+                }
+                None => ws_connect(config, url).await?,
+            };
             Python::attach(|py| slf.borrow_mut(py).ws = Some(Arc::new(Mutex::new(ws))));
             Ok(())
         })
@@ -211,9 +227,19 @@ impl AsyncClient {
             .clone()
             .ok_or_else(|| PyRuntimeError::new_err("no url was provided"))?;
 
+        let timeout = slf.borrow().pending_timeout.clone();
+
         let slf = slf.unbind();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let ws = ws_connect(config, url).await?;
+            let ws = match timeout {
+                Some(millis) => {
+                    tokio::time::timeout(Duration::from_millis(millis), ws_connect(config, url))
+                        .await
+                        .map_err(|_| PyTimeoutError::new_err("connect timed out"))?
+                        .map_err(|e| PyRuntimeError::new_err(format!("{e}")))?
+                }
+                None => ws_connect(config, url).await?,
+            };
             Python::attach(|py| slf.borrow_mut(py).ws = Some(Arc::new(Mutex::new(ws))));
             Ok(slf)
         })
@@ -248,11 +274,16 @@ impl AsyncClient {
 }
 
 #[pyfunction]
-#[pyo3(signature=(url, config=None))]
-pub(crate) fn aconnect(url: String, config: Option<ClientConfig>) -> AsyncClient {
+#[pyo3(signature=(url, config=None, timeout=None))]
+pub(crate) fn aconnect(
+    url: String,
+    config: Option<ClientConfig>,
+    timeout: Option<u64>,
+) -> AsyncClient {
     AsyncClient {
         ws: None,
         pending_url: Some(url),
         config: config.unwrap_or_default(),
+        pending_timeout: timeout,
     }
 }
