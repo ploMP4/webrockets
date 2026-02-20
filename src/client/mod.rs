@@ -148,7 +148,7 @@ pub(crate) async fn ws_connect(
         .body(Empty::<Bytes>::new())
         .map_err(|e| PyRuntimeError::new_err(format!("unable to construct request: {e}")))?;
 
-    let (ws, _) = fastwebsockets::handshake::client(&SpawnExecutor, req, stream)
+    let (mut ws, _) = fastwebsockets::handshake::client(&SpawnExecutor, req, stream)
         .await
         .map_err(|e| match e {
             WebSocketError::InvalidStatusCode(status_code) => {
@@ -156,6 +156,10 @@ pub(crate) async fn ws_connect(
             }
             _ => PyRuntimeError::new_err(format!("error on client handshake: {e}")),
         })?;
+
+    if let Some(size) = config.max_message_size {
+        ws.set_max_message_size(size);
+    }
 
     Ok(FragmentCollector::new(ws))
 }

@@ -2,9 +2,12 @@ from types import TracebackType
 from typing import Self
 
 class ClientConfig:
-    extra_headers: dict[str, str]
+    extra_headers: dict[str, str] | None
+    max_message_size: int | None
 
-    def __init__(self, extra_headers: dict[str, str] | None = None) -> None: ...
+    def __init__(
+        self, extra_headers: dict[str, str] | None = None, max_message_size: int | None = None
+    ) -> None: ...
 
 class Client:
     config: ClientConfig

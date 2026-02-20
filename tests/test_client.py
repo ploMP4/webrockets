@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 from webrockets import Connection, IncomingConnection
-from webrockets.client import aconnect, connect
+from webrockets.client import ClientConfig, aconnect, connect
 from webrockets.test import runserver
 
 
@@ -12,7 +12,7 @@ class TestClient:
 
         @route.connect("before")
         async def conn(conn: IncomingConnection):
-            await asyncio.sleep(2)
+            await asyncio.sleep(501)
 
         with runserver(ws_server):
             try:
@@ -27,7 +27,7 @@ class TestClient:
 
         @route.connect("before")
         async def conn(conn: IncomingConnection):
-            await asyncio.sleep(2)
+            await asyncio.sleep(501)
 
         with runserver(ws_server):
             try:
@@ -66,3 +66,22 @@ class TestClient:
                     pytest.fail("Expected receive to timeout")
                 except TimeoutError as e:
                     assert "timed out" in str(e)
+
+    @pytest.mark.asyncio
+    async def test_async_client_max_message_size(self, ws_server):
+        route = ws_server.create_route("ws")
+
+        @route.connect("after")
+        def conn(conn: Connection):
+            conn.send("A" * (1 << 21))
+
+        with runserver(ws_server):
+            async with aconnect(
+                f"ws://{ws_server.addr()}/ws",
+                config=ClientConfig(max_message_size=1 << 20),  # 1 MiB
+            ) as ws:
+                try:
+                    await ws.recv(timeout=500)
+                    pytest.fail("Expected frame too large")
+                except RuntimeError as e:
+                    assert "Frame too large" in str(e)
