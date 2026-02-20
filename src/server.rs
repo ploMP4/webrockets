@@ -187,37 +187,46 @@ impl WebsocketServer {
         handler: Arc<Py<WebsocketRoute>>,
         conn: Py<IncomingConnection>,
     ) -> Result<Py<Connection>, Response> {
-        let result = tokio::task::spawn_blocking(move || {
-            Python::attach(|py| -> Result<Py<Connection>, (StatusCode, &'static str)> {
+        let (upgraded_conn, maybe_handle) = tokio::task::spawn_blocking(move || {
+            Python::attach(|py| {
                 let view = handler.borrow(py);
 
                 if !WebsocketServer::authenticated(py, &view.authentication_classes, &conn) {
-                    return Err((StatusCode::UNAUTHORIZED, "Authentication failed"));
+                    return Err((StatusCode::UNAUTHORIZED, "Authentication failed").into_response());
                 }
 
-                if let Some(cb) = &view.connect_before_callback {
-                    if let Err(e) = cb.invoke(py, (&conn,)) {
-                        log::error!("Error in websocket connect_before callback: {}", e);
-                        return Err((StatusCode::INTERNAL_SERVER_ERROR, "Connection failed"));
-                    }
-                }
+                let maybe_fut = view
+                    .connect_before_callback
+                    .as_ref()
+                    .map(|cb| {
+                        cb.invoke(py, (&conn,)).map_err(|e| {
+                            log::error!("Error in websocket connect_before callback: {e}");
+                            (StatusCode::INTERNAL_SERVER_ERROR, "Connection failed").into_response()
+                        })
+                    })
+                    .transpose()?
+                    .flatten();
 
-                IncomingConnection::upgrade(&conn, py).map_err(|e| {
-                    log::error!("Error upgrading connection: {}", e);
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "Connection upgrade failed",
-                    )
-                })
+                let upgraded_conn = IncomingConnection::upgrade(&conn, py).map_err(|_| {
+                    (StatusCode::INTERNAL_SERVER_ERROR, "Upgrade failed").into_response()
+                })?;
+
+                Ok((upgraded_conn, maybe_fut))
             })
         })
-        .await;
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Internal error").into_response())??;
 
-        match result {
-            Ok(Ok(conn)) => Ok(conn),
-            Ok(Err((status, msg))) => Err((status, msg).into_response()),
-            Err(_) => Err((StatusCode::INTERNAL_SERVER_ERROR, "Internal error").into_response()),
+        if let Some(handle) = maybe_handle {
+            handle
+                .await
+                .map_err(|_| {
+                    (StatusCode::INTERNAL_SERVER_ERROR, "Connection failed").into_response()
+                })?
+                .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()).into_response())?;
         }
+
+        Ok(upgraded_conn)
     }
 
     async fn send_listener<S>(
@@ -331,35 +340,31 @@ impl WebsocketServer {
                                     Cow::Borrowed(payload_str)
                                 };
 
-                                Python::attach(|py| {
-                                    if let Err(e) = match &handler.schema {
-                                        Some(schema) => handler.callback.invoke_with_schema(
-                                            py,
-                                            (&conn, &payload),
-                                            schema,
-                                        ),
-                                        None => {
-                                            handler.callback.invoke(py, (&conn, payload.as_ref()))
-                                        }
-                                    } {
-                                        log::error!("Error in receive callback: {}", e);
-                                    };
-                                });
+                                if let Err(e) = Python::attach(|py| match &handler.schema {
+                                    Some(schema) => handler.callback.invoke_with_schema(
+                                        py,
+                                        (&conn, &payload),
+                                        schema,
+                                    ),
+                                    None => handler.callback.invoke(py, (&conn, payload.as_ref())),
+                                }) {
+                                    log::error!("Error in receive callback: {}", e);
+                                };
                             }
                             None => {
                                 if let Some(cb) = &receive_callback.generic {
-                                    Python::attach(|py| {
-                                        if let Err(e) = match &receive_callback.generic_schema {
+                                    if let Err(e) = Python::attach(|py| {
+                                        match &receive_callback.generic_schema {
                                             Some(schema) => cb.invoke_with_schema(
                                                 py,
                                                 (&conn, payload_str),
                                                 schema,
                                             ),
                                             None => cb.invoke(py, (&conn, payload_str)),
-                                        } {
-                                            log::error!("Error in receive callback: {}", e);
                                         }
-                                    });
+                                    }) {
+                                        log::error!("Error in receive callback: {}", e);
+                                    };
                                 }
                             }
                         };

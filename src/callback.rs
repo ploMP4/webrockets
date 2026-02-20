@@ -1,6 +1,7 @@
 use pyo3::call::PyCallArgs;
 use pyo3::prelude::*;
 use pyo3::types::PyFunction;
+use tokio::task::JoinHandle;
 
 use crate::connection::Connection;
 use crate::TASK_LOCALS;
@@ -23,7 +24,11 @@ impl Callback {
     }
 
     #[inline(always)]
-    pub(crate) fn invoke<'py, A>(&self, py: Python<'py>, args: A) -> PyResult<()>
+    pub(crate) fn invoke<'py, A>(
+        &self,
+        py: Python<'py>,
+        args: A,
+    ) -> PyResult<Option<JoinHandle<PyResult<Py<PyAny>>>>>
     where
         A: PyCallArgs<'py>,
     {
@@ -32,12 +37,13 @@ impl Callback {
             let locals = TASK_LOCALS.get().ok_or_else(|| {
                 pyo3::exceptions::PyRuntimeError::new_err("no running event loop")
             })?;
-            tokio::spawn(pyo3_async_runtimes::into_future_with_locals(locals, coro)?);
+            Ok(Some(tokio::spawn(
+                pyo3_async_runtimes::into_future_with_locals(locals, coro)?,
+            )))
         } else {
             self.func.call1(py, args)?;
+            Ok(None)
         }
-
-        Ok(())
     }
 
     #[inline(always)]
@@ -46,7 +52,7 @@ impl Callback {
         py: Python<'_>,
         args: (&Py<Connection>, &str),
         schema: &Py<PyAny>,
-    ) -> PyResult<()> {
+    ) -> PyResult<Option<JoinHandle<PyResult<Py<PyAny>>>>> {
         let (conn, json_str) = args;
 
         let validated = schema
@@ -58,11 +64,12 @@ impl Callback {
             let locals = TASK_LOCALS.get().ok_or_else(|| {
                 pyo3::exceptions::PyRuntimeError::new_err("no running event loop")
             })?;
-            tokio::spawn(pyo3_async_runtimes::into_future_with_locals(locals, coro)?);
+            Ok(Some(tokio::spawn(
+                pyo3_async_runtimes::into_future_with_locals(locals, coro)?,
+            )))
         } else {
             self.func.call1(py, (conn, validated))?;
+            Ok(None)
         }
-
-        Ok(())
     }
 }
