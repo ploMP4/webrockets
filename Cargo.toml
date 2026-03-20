@@ -35,6 +35,11 @@ hyper = { version = "1.8.1", features = ["client", "http1"] }
 hyper-util = { version = "0.1.19", features = ["tokio"] }
 http-body-util = "0.1.3"
 bytes = "1.11.0"
+tokio-rustls = "0.26.4"
+webpki-roots = "1.0.6"
+rustls = { version = "0.23.37", features = ["ring"] }
+rustls-platform-verifier = "0.6.2"
+tokio-util = "0.7.18"
 
 [profile.release]
 lto = "fat"

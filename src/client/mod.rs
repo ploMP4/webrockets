@@ -1,6 +1,12 @@
 use bytes::Bytes;
 use http_body_util::Empty;
-use std::{future::Future, sync::LazyLock};
+use rustls_platform_verifier::ConfigVerifierExt;
+use std::{
+    future::Future,
+    sync::{Arc, LazyLock},
+};
+use tokio_rustls::TlsConnector;
+use tokio_util::either::Either;
 
 use fastwebsockets::{CloseCode, FragmentCollector, WebSocketError};
 use hyper::{
@@ -107,6 +113,12 @@ where
     }
 }
 
+fn tls_connector() -> Result<TlsConnector, rustls::Error> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let config = tokio_rustls::rustls::ClientConfig::with_platform_verifier()?;
+    Ok(TlsConnector::from(Arc::new(config)))
+}
+
 pub(crate) async fn ws_connect(
     config: ClientConfig,
     url: String,
@@ -119,12 +131,26 @@ pub(crate) async fn ws_connect(
         .host()
         .ok_or_else(|| PyRuntimeError::new_err("URL missing host"))?;
 
-    let port = uri.port_u16().unwrap_or(80);
+    let default_port = match uri.scheme_str() {
+        Some("wss") => 443,
+        _ => 80,
+    };
+    let port = uri.port_u16().unwrap_or(default_port);
     let addr = format!("{host}:{port}");
 
     let stream = TcpStream::connect(&addr)
         .await
         .map_err(|e| PyRuntimeError::new_err(format!("unable to connect to {addr}: {e}")))?;
+
+    let stream = if config.verify_ssl {
+        let tls_connector = tls_connector().unwrap();
+        let domain = tokio_rustls::rustls::pki_types::ServerName::try_from(host.to_string()).map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid dnsname")
+        })?;
+        Either::Left(tls_connector.connect(domain, stream).await?)
+    } else {
+        Either::Right(stream)
+    };
 
     let mut req_builder = Request::builder()
         .method("GET")

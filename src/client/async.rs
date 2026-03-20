@@ -227,7 +227,7 @@ impl AsyncClient {
             .clone()
             .ok_or_else(|| PyRuntimeError::new_err("no url was provided"))?;
 
-        let timeout = slf.borrow().pending_timeout.clone();
+        let timeout = slf.borrow().pending_timeout;
 
         let slf = slf.unbind();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
