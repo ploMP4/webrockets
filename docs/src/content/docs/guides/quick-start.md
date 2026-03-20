@@ -50,23 +50,22 @@ python server.py
 
 ## Testing the Connection
 
-Connect using a WebSocket client. Here's a simple browser test:
+Create a `client.py` script using the built-in webrockets client:
 
-```javascript
-const ws = new WebSocket('ws://localhost:8080/ws/echo/');
+```python
+from webrockets.client import connect
 
-ws.onopen = () => {
-    console.log('Connected');
-    ws.send('Hello, server!');
-};
+with connect("ws://localhost:8080/ws/echo/") as ws:
+    ws.send("Hello, server!")
+    response = ws.recv()
+    print("Received:", response)
+```
 
-ws.onmessage = (event) => {
-    console.log('Received:', event.data);
-};
+Run it while the server is running:
 
-ws.onclose = (event) => {
-    console.log('Disconnected:', event.code);
-};
+```bash
+python client.py
+# Received: You said: Hello, server!
 ```
 
 ## Route Callbacks
