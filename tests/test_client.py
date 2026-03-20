@@ -87,6 +87,76 @@ class TestClient:
                     assert "Frame too large" in str(e)
 
 
+class TestSubprotocolNegotiation:
+    @pytest.mark.asyncio
+    async def test_hook_negotiates_subprotocol(self, ws_server):
+        route = ws_server.create_route("ws")
+
+        @route.connect("before")
+        def on_connect(conn: IncomingConnection):
+            requested = conn.get_header("sec-websocket-protocol") or ""
+            protocols = [p.strip() for p in requested.split(",") if p.strip()]
+            if "graphql-ws" in protocols:
+                conn.subprotocol = "graphql-ws"
+
+        with runserver(ws_server):
+            async with aconnect(
+                f"ws://{ws_server.addr()}/ws",
+                config=ClientConfig(subprotocols=["graphql-ws", "chat"]),
+            ) as ws:
+                assert ws.negotiated_protocol == "graphql-ws"
+
+    @pytest.mark.asyncio
+    async def test_subprotocol_propagates_to_connection(self, ws_server):
+        route = ws_server.create_route("ws")
+
+        @route.connect("before")
+        def on_connect(conn: IncomingConnection):
+            conn.subprotocol = "chat"
+
+        @route.connect("after")
+        def on_connected(conn: Connection):
+            conn.send(conn.subprotocol or "none")
+
+        with runserver(ws_server):
+            async with aconnect(
+                f"ws://{ws_server.addr()}/ws",
+                config=ClientConfig(subprotocols=["chat"]),
+            ) as ws:
+                assert ws.negotiated_protocol == "chat"
+                msg = await asyncio.wait_for(ws.recv(), timeout=2.0)
+                assert msg == "chat"
+
+    @pytest.mark.asyncio
+    async def test_no_subprotocol_when_hook_skips(self, ws_server):
+        route = ws_server.create_route("ws")
+
+        @route.connect("before")
+        def on_connect(conn: IncomingConnection):
+            pass
+
+        with runserver(ws_server):
+            async with aconnect(
+                f"ws://{ws_server.addr()}/ws",
+                config=ClientConfig(subprotocols=["graphql-ws"]),
+            ) as ws:
+                assert ws.negotiated_protocol is None
+
+    def test_sync_client_subprotocol(self, ws_server):
+        route = ws_server.create_route("ws")
+
+        @route.connect("before")
+        def on_connect(conn: IncomingConnection):
+            conn.subprotocol = "chat"
+
+        with runserver(ws_server):
+            with connect(
+                f"ws://{ws_server.addr()}/ws",
+                config=ClientConfig(subprotocols=["chat"]),
+            ) as ws:
+                assert ws.negotiated_protocol == "chat"
+
+
 class TestSSL:
     def test_verify_ssl_rejects_plain_server(self, ws_server):
         route = ws_server.create_route("ws")

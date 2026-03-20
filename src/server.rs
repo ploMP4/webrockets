@@ -1,5 +1,5 @@
 use axum::extract::State;
-use axum::http::{HeaderMap, StatusCode, Uri};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::{routing::get, Router};
 use fastwebsockets::{upgrade, CloseCode, Frame, OpCode, WebSocketError};
@@ -167,10 +167,22 @@ impl WebsocketServer {
             Err(response) => return response,
         };
 
+        let negotiated_protocol =
+            Python::attach(|py| conn.borrow(py).as_super().subprotocol.clone());
+
         let (response, fut) = match ws.upgrade() {
             Ok(upgrade) => upgrade,
             Err(_) => return (StatusCode::BAD_REQUEST, "WebSocket upgrade failed").into_response(),
         };
+
+        let mut response = response.into_response();
+        if let Some(proto) = negotiated_protocol {
+            if let Ok(value) = HeaderValue::from_str(&proto) {
+                response
+                    .headers_mut()
+                    .insert("sec-websocket-protocol", value);
+            }
+        }
 
         tokio::spawn(async move {
             if let Err(e) =
@@ -180,7 +192,7 @@ impl WebsocketServer {
             }
         });
 
-        response.into_response()
+        response
     }
 
     async fn authenticate_and_connect(

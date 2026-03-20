@@ -15,6 +15,8 @@ pub(crate) struct BaseConnection {
     cookies: HashMap<String, String>,
     #[pyo3(set)]
     pub(crate) user: Option<Py<PyAny>>,
+    #[pyo3(set)]
+    pub(crate) subprotocol: Option<String>,
 }
 
 impl BaseConnection {
@@ -30,6 +32,7 @@ impl BaseConnection {
             headers,
             cookies,
             user: None,
+            subprotocol: None,
         }
     }
 }
@@ -84,14 +87,9 @@ impl IncomingConnection {
         }
 
         Python::attach(|py| -> Py<IncomingConnection> {
-            Py::new(
-                py,
-                (
-                    IncomingConnection,
-                    BaseConnection::new(path, query_string, headers, cookies),
-                ),
-            )
-            .expect("Unable to create connection")
+            let mut base = BaseConnection::new(path, query_string, headers, cookies);
+            base.subprotocol = None;
+            Py::new(py, (IncomingConnection, base)).expect("Unable to create connection")
         })
     }
 
@@ -105,13 +103,14 @@ impl IncomingConnection {
         Py::new(
             py,
             (
-                Connection::new(),
+                Connection::new(base.subprotocol.clone()),
                 BaseConnection {
                     path: base.path.clone(),
                     query_string: base.query_string.clone(),
                     headers: base.headers.clone(),
                     cookies: base.cookies.clone(),
                     user: base.user.as_ref().map(|u| u.clone_ref(py)),
+                    subprotocol: base.subprotocol.clone(),
                 },
             ),
         )
@@ -123,14 +122,17 @@ pub(crate) struct Connection {
     pub(crate) sender: Option<Arc<mpsc::Sender<Arc<Message>>>>,
     pub(crate) channels: Option<Arc<ChannelStore>>,
     pub(crate) id: Option<u64>,
+    #[pyo3(get)]
+    pub(crate) subprotocol: Option<String>,
 }
 
 impl Connection {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(subprotocol: Option<String>) -> Self {
         Self {
             sender: None,
             channels: None,
             id: None,
+            subprotocol,
         }
     }
 }
@@ -145,7 +147,7 @@ impl Connection {
         cookies: HashMap<String, String>,
     ) -> (Self, BaseConnection) {
         (
-            Self::new(),
+            Self::new(None),
             BaseConnection::new(path, query_string, headers, cookies),
         )
     }
