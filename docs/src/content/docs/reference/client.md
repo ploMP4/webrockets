@@ -3,10 +3,6 @@ title: Client
 description: API reference for the WebSocket client classes and functions.
 ---
 
-:::caution[Early Development]
-The WebSocket client is in early development and is mostly used for testing at the moment. Not yet recommended for production use.
-:::
-
 ## Import
 
 ```python
@@ -31,15 +27,16 @@ from webrockets.client import (
 Create a synchronous WebSocket connection.
 
 ```python
-connect(url: str, config: ClientConfig | None = None) -> Client
+connect(url: str, config: ClientConfig | None = None, timeout: int | None = None) -> Client
 ```
 
 #### Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `url` | `str` | - | WebSocket URL to connect to (e.g., `ws://localhost:8080/ws/`) |
+| `url` | `str` | - | WebSocket URL (`ws://` or `wss://`) |
 | `config` | `ClientConfig \| None` | `None` | Optional client configuration |
+| `timeout` | `int \| None` | `None` | Connection timeout in milliseconds |
 
 #### Returns
 
@@ -55,8 +52,8 @@ with connect("ws://localhost:8080/ws/echo/") as ws:
     ws.send("Hello")
     print(ws.recv())
 
-# Without context manager
-ws = connect("ws://localhost:8080/ws/echo/")
+# With timeout
+ws = connect("ws://localhost:8080/ws/echo/", timeout=5000)
 ws.send("Hello")
 print(ws.recv())
 ws.close()
@@ -69,15 +66,16 @@ ws.close()
 Create an asynchronous WebSocket connection for use with `async with`.
 
 ```python
-aconnect(url: str, config: ClientConfig | None = None) -> AsyncClient
+aconnect(url: str, config: ClientConfig | None = None, timeout: int | None = None) -> AsyncClient
 ```
 
 #### Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `url` | `str` | - | WebSocket URL to connect to |
+| `url` | `str` | - | WebSocket URL (`ws://` or `wss://`) |
 | `config` | `ClientConfig \| None` | `None` | Optional client configuration |
+| `timeout` | `int \| None` | `None` | Connection timeout in milliseconds |
 
 #### Returns
 
@@ -90,7 +88,7 @@ import asyncio
 from webrockets.client import aconnect
 
 async def main():
-    async with aconnect("ws://localhost:8080/ws/echo/") as ws:
+    async with aconnect("ws://localhost:8080/ws/echo/", timeout=5000) as ws:
         await ws.send("Hello")
         print(await ws.recv())
 
@@ -116,6 +114,7 @@ Client(config: ClientConfig | None = None)
 | Property | Type | Description |
 |----------|------|-------------|
 | `config` | `ClientConfig` | The client configuration |
+| `negotiated_protocol` | `str \| None` | Subprotocol selected by the server after `connect()`, or `None` |
 
 #### Methods
 
@@ -124,8 +123,13 @@ Client(config: ClientConfig | None = None)
 Connect to a WebSocket server.
 
 ```python
-connect(url: str) -> None
+connect(url: str, timeout: int | None = None) -> None
 ```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `url` | `str` | - | WebSocket URL to connect to |
+| `timeout` | `int \| None` | `None` | Connection timeout in milliseconds |
 
 ##### send
 
@@ -149,13 +153,37 @@ recv(timeout: int | None = None) -> str | bytes
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `timeout` | `int \| None` | `None` | Optional timeout in milliseconds. If `None`, blocks indefinitely. |
+| `timeout` | `int \| None` | `None` | Timeout in milliseconds. If `None`, blocks indefinitely. |
 
 **Returns:** The received message. Text frames return `str`, binary frames return `bytes`.
 
 **Raises:**
 - `ConnectionClosed` if the server closes the connection.
 - `TimeoutError` if the timeout is reached before a message is received.
+
+##### ping
+
+Send a ping frame to the server.
+
+```python
+ping(data: str | bytes | None = None) -> None
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `data` | `str \| bytes \| None` | `None` | Optional payload to include in the ping frame |
+
+##### pong
+
+Send a pong frame to the server.
+
+```python
+pong(data: str | bytes | None = None) -> None
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `data` | `str \| bytes \| None` | `None` | Optional payload to include in the pong frame |
 
 ##### close
 
@@ -169,30 +197,6 @@ close(code: int = 1000, reason: str = "") -> None
 |-----------|------|---------|-------------|
 | `code` | `int` | `1000` | WebSocket close code |
 | `reason` | `str` | `""` | Close reason string |
-
-##### ping
-
-Send a ping frame to the server.
-
-```python
-ping(data: str | bytes | None = None) -> None
-```
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `data` | `str \| bytes \| None` | `None` | Optional payload data to include in the ping frame |
-
-##### pong
-
-Send a pong frame to the server.
-
-```python
-pong(data: str | bytes | None = None) -> None
-```
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `data` | `str \| bytes \| None` | `None` | Optional payload data to include in the pong frame |
 
 #### Context Manager
 
@@ -222,6 +226,7 @@ AsyncClient(config: ClientConfig | None = None)
 | Property | Type | Description |
 |----------|------|-------------|
 | `config` | `ClientConfig` | The client configuration |
+| `negotiated_protocol` | `str \| None` | Subprotocol selected by the server after `connect()`, or `None` |
 
 #### Methods
 
@@ -230,8 +235,13 @@ AsyncClient(config: ClientConfig | None = None)
 Connect to a WebSocket server.
 
 ```python
-async connect(url: str) -> None
+async connect(url: str, timeout: int | None = None) -> None
 ```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `url` | `str` | - | WebSocket URL to connect to |
+| `timeout` | `int \| None` | `None` | Connection timeout in milliseconds |
 
 ##### send
 
@@ -251,21 +261,13 @@ async recv(timeout: int | None = None) -> str | bytes
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `timeout` | `int \| None` | `None` | Optional timeout in milliseconds. If `None`, blocks indefinitely. |
+| `timeout` | `int \| None` | `None` | Timeout in milliseconds. If `None`, blocks indefinitely. |
 
 **Returns:** The received message. Text frames return `str`, binary frames return `bytes`.
 
 **Raises:**
 - `ConnectionClosed` if the server closes the connection.
 - `TimeoutError` if the timeout is reached before a message is received.
-
-##### close
-
-Close the WebSocket connection.
-
-```python
-async close(code: int = 1000, reason: str = "") -> None
-```
 
 ##### ping
 
@@ -277,7 +279,7 @@ async ping(data: str | bytes | None = None) -> None
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `data` | `str \| bytes \| None` | `None` | Optional payload data to include in the ping frame |
+| `data` | `str \| bytes \| None` | `None` | Optional payload to include in the ping frame |
 
 ##### pong
 
@@ -289,7 +291,15 @@ async pong(data: str | bytes | None = None) -> None
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `data` | `str \| bytes \| None` | `None` | Optional payload data to include in the pong frame |
+| `data` | `str \| bytes \| None` | `None` | Optional payload to include in the pong frame |
+
+##### close
+
+Close the WebSocket connection.
+
+```python
+async close(code: int = 1000, reason: str = "") -> None
+```
 
 #### Async Context Manager
 
@@ -311,7 +321,12 @@ Configuration options for the WebSocket client.
 #### Constructor
 
 ```python
-ClientConfig(extra_headers: dict[str, str] | None = None)
+ClientConfig(
+    extra_headers: dict[str, str] | None = None,
+    max_message_size: int | None = None,
+    verify_ssl: bool = False,
+    subprotocols: list[str] | None = None,
+)
 ```
 
 #### Parameters
@@ -319,19 +334,25 @@ ClientConfig(extra_headers: dict[str, str] | None = None)
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `extra_headers` | `dict[str, str] \| None` | `None` | Additional HTTP headers to send during the WebSocket handshake |
+| `max_message_size` | `int \| None` | `None` | Maximum incoming message size in bytes. Messages exceeding this limit will cause an error. |
+| `verify_ssl` | `bool` | `False` | Verify TLS certificates for `wss://` connections using the platform certificate store |
+| `subprotocols` | `list[str] \| None` | `None` | Requested subprotocols, sent as `Sec-WebSocket-Protocol`. After connecting, `Client.negotiated_protocol` reflects the server's choice. |
 
 #### Example
 
 ```python
 from webrockets.client import connect, ClientConfig
 
-config = ClientConfig(extra_headers={
-    "Authorization": "Bearer token123",
-    "X-Custom-Header": "value",
-})
+config = ClientConfig(
+    extra_headers={"Authorization": "Bearer token123"},
+    verify_ssl=True,
+    subprotocols=["graphql-ws", "graphql-transport-ws"],
+    max_message_size=16 * 1024 * 1024,  # 16 MB
+)
 
-with connect("ws://localhost:8080/ws/", config=config) as ws:
-    ws.send("authenticated message")
+with connect("wss://api.example.com/ws/", config=config) as ws:
+    print(ws.negotiated_protocol)  # e.g. "graphql-ws"
+    ws.send("hello")
 ```
 
 ---

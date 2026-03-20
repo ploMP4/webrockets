@@ -4,13 +4,20 @@ from typing import Self
 class ClientConfig:
     extra_headers: dict[str, str] | None
     max_message_size: int | None
+    verify_ssl: bool
+    subprotocols: list[str] | None
 
     def __init__(
-        self, extra_headers: dict[str, str] | None = None, max_message_size: int | None = None
+        self,
+        extra_headers: dict[str, str] | None = None,
+        max_message_size: int | None = None,
+        verify_ssl: bool = False,
+        subprotocols: list[str] | None = None,
     ) -> None: ...
 
 class Client:
     config: ClientConfig
+    negotiated_protocol: str | None
 
     def __init__(self, config: ClientConfig | None = None) -> None: ...
     def connect(self, url: str, timeout: int | None = None) -> None: ...
@@ -32,6 +39,7 @@ def connect(url: str, config: ClientConfig | None = None, timeout: int | None = 
 
 class AsyncClient:
     config: ClientConfig
+    negotiated_protocol: str | None
 
     def __init__(self, config: ClientConfig | None = None) -> None: ...
     async def connect(self, url: str, timeout: int | None = None) -> None: ...

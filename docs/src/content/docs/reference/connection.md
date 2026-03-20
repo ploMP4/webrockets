@@ -7,6 +7,7 @@ The `Connection` class represents an active WebSocket connection. It provides ac
 
 ## Properties
 
+
 ### user
 
 The authenticated user, set by authentication classes.
@@ -92,6 +93,33 @@ def on_connect(conn):
     # Access cookies directly
     for name, value in conn.cookies.items():
         print(f"{name}: {value}")
+```
+
+### subprotocol
+
+The negotiated WebSocket subprotocol.
+
+```python
+subprotocol: str | None
+```
+
+In the `connect("before")` phase, set this to the subprotocol you want to accept. The value is echoed back to the client in the `Sec-WebSocket-Protocol` response header and is readable on the `Connection` in all later callbacks.
+
+```python
+SUPPORTED = {"graphql-ws", "graphql-transport-ws"}
+
+@chat.connect("before")
+def on_connect(conn):  # conn is IncomingConnection
+    requested = conn.get_header("sec-websocket-protocol") or ""
+    for proto in requested.split(","):
+        proto = proto.strip()
+        if proto in SUPPORTED:
+            conn.subprotocol = proto
+            break
+
+@chat.connect("after")
+def on_connected(conn):  # conn is Connection
+    print(conn.subprotocol)  # the negotiated protocol, or None
 ```
 
 ## Methods
@@ -319,6 +347,8 @@ def on_connect(conn):
 ## IncomingConnection
 
 During the `connect("before")` phase, the connection object is an `IncomingConnection` which has the same properties and `get_cookie`/`get_header` methods, but not `send`, `broadcast`, or `close` since the connection is not yet established.
+
+`subprotocol` is writable on `IncomingConnection` — set it to accept a subprotocol during the handshake.
 
 ```python
 @chat.connect("before")

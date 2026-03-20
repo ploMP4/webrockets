@@ -3,11 +3,7 @@ title: Client
 description: Built-in WebSocket client for testing and simple use cases.
 ---
 
-:::caution[Early Development]
-The WebSocket client is currently in early development and is mostly used for testing at the moment. It is not yet recommended for production use. For production applications, consider using established WebSocket client libraries like [websockets](https://websockets.readthedocs.io/).
-:::
-
-webrockets includes a built-in WebSocket client for testing your WebSocket applications. Both synchronous and asynchronous APIs are available.
+webrockets includes a built-in WebSocket client. Both synchronous and asynchronous APIs are available, with support for TLS, timeouts, subprotocol negotiation, and ping/pong.
 
 ## Import
 
@@ -68,6 +64,77 @@ with connect("ws://localhost:8080/ws/chat/", config=config) as ws:
     print(ws.recv())
 ```
 
+### TLS / Secure Connections
+
+Use `wss://` URLs and set `verify_ssl=True` to connect securely. The client uses the platform certificate store:
+
+```python
+from webrockets.client import connect, ClientConfig
+
+config = ClientConfig(verify_ssl=True)
+
+with connect("wss://api.example.com/ws/", config=config) as ws:
+    ws.send("Hello!")
+    print(ws.recv())
+```
+
+Set `verify_ssl=False` to skip certificate verification (useful during development with self-signed certificates):
+
+```python
+config = ClientConfig(verify_ssl=False)
+ws = connect("wss://localhost:8443/ws/", config=config)
+```
+
+### Timeouts
+
+Pass a timeout (in milliseconds) to `connect()` or `recv()`:
+
+```python
+from webrockets.client import connect
+
+# Timeout on the initial connection
+ws = connect("ws://localhost:8080/ws/echo/", timeout=5000)  # 5 seconds
+
+# Timeout on a single recv call
+try:
+    msg = ws.recv(timeout=10000)  # 10 seconds
+except TimeoutError:
+    print("No message received in time")
+```
+
+### Ping / Pong
+
+Send heartbeat frames to keep a connection alive:
+
+```python
+with connect("ws://localhost:8080/ws/echo/") as ws:
+    ws.ping()              # empty ping
+    ws.ping("heartbeat")   # ping with a payload
+    ws.pong()              # manual pong
+```
+
+### Subprotocol Negotiation
+
+Request subprotocols via `ClientConfig`. After connecting, `negotiated_protocol` contains the one the server selected (or `None`):
+
+```python
+from webrockets.client import connect, ClientConfig
+
+config = ClientConfig(subprotocols=["graphql-ws", "graphql-transport-ws"])
+
+with connect("wss://api.example.com/graphql", config=config) as ws:
+    print(ws.negotiated_protocol)  # e.g. "graphql-ws"
+    ws.send('{"type": "connection_init"}')
+```
+
+### Max Message Size
+
+Limit the maximum incoming message size (in bytes) to prevent memory issues:
+
+```python
+config = ClientConfig(max_message_size=16 * 1024 * 1024)  # 16 MB
+```
+
 ## Asynchronous Client
 
 ### Basic Usage
@@ -85,6 +152,23 @@ async def main():
         print(response)
 
 asyncio.run(main())
+```
+
+The async client accepts the same `ClientConfig` options and `timeout` parameter:
+
+```python
+from webrockets.client import aconnect, ClientConfig
+
+config = ClientConfig(
+    verify_ssl=True,
+    subprotocols=["chat"],
+)
+
+async with aconnect("wss://api.example.com/ws/", config=config, timeout=5000) as ws:
+    print(ws.negotiated_protocol)
+    await ws.send("Hello!")
+    msg = await ws.recv(timeout=10000)
+    await ws.ping()
 ```
 
 ## Exception Handling
@@ -134,16 +218,6 @@ def test_echo():
 ```
 
 See the [Testing Guide](/guides/testing/) for more testing patterns.
-
-## Limitations
-
-The current client implementation has the following limitations:
-
-- **No TLS/SSL support**: Only `ws://` URLs are supported, not `wss://`
-- **No subprotocol negotiation**: Cannot specify WebSocket subprotocols
-- **No timeouts**: Connection and read timeouts are not configurable
-- **No max message size**: Cannot limit incoming message size
-- **No compression**: `permessage-deflate` extension is not supported
 
 ## Next Steps
 

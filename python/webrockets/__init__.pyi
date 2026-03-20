@@ -42,6 +42,7 @@ class BaseConnection:
     headers: dict[str, str]
     cookies: dict[str, str]
     user: Any | None
+    subprotocol: str | None
 
     def __init__(
         self,

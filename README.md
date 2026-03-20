@@ -13,6 +13,7 @@ A high-performance WebSocket server for Python, with first-class Django support.
 - **Pattern Matching** - Route messages based on discriminator fields with optional Pydantic validation
 - **Broadcasting** - Built-in support for Redis and RabbitMQ message brokers
 - **Async Ready** - Supports both sync and async Python callbacks
+- **Built-in Client** - Sync and async WebSocket client with TLS, timeouts, and subprotocol negotiation
 
 ## Performance
 
