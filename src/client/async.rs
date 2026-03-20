@@ -16,6 +16,8 @@ use crate::client::{parse_close_payload, ws_connect, ClientConfig, ConnectionClo
 pub(crate) struct AsyncClient {
     #[pyo3(get)]
     config: ClientConfig,
+    #[pyo3(get)]
+    negotiated_protocol: Option<String>,
 
     ws: Option<Arc<Mutex<FragmentCollector<TokioIo<Upgraded>>>>>,
     pending_url: Option<String>,
@@ -32,6 +34,7 @@ impl AsyncClient {
             pending_url: None,
             config: config.unwrap_or_default(),
             pending_timeout: None,
+            negotiated_protocol: None,
         }
     }
 
@@ -45,7 +48,7 @@ impl AsyncClient {
         let config = slf.borrow(py).config.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let ws = match timeout {
+            let (ws, negotiated_protocol) = match timeout {
                 Some(millis) => {
                     tokio::time::timeout(Duration::from_millis(millis), ws_connect(config, url))
                         .await
@@ -54,7 +57,11 @@ impl AsyncClient {
                 }
                 None => ws_connect(config, url).await?,
             };
-            Python::attach(|py| slf.borrow_mut(py).ws = Some(Arc::new(Mutex::new(ws))));
+            Python::attach(|py| {
+                let mut client = slf.borrow_mut(py);
+                client.ws = Some(Arc::new(Mutex::new(ws)));
+                client.negotiated_protocol = negotiated_protocol;
+            });
             Ok(())
         })
     }
@@ -231,7 +238,7 @@ impl AsyncClient {
 
         let slf = slf.unbind();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let ws = match timeout {
+            let (ws, negotiated_protocol) = match timeout {
                 Some(millis) => {
                     tokio::time::timeout(Duration::from_millis(millis), ws_connect(config, url))
                         .await
@@ -240,7 +247,11 @@ impl AsyncClient {
                 }
                 None => ws_connect(config, url).await?,
             };
-            Python::attach(|py| slf.borrow_mut(py).ws = Some(Arc::new(Mutex::new(ws))));
+            Python::attach(|py| {
+                let mut client = slf.borrow_mut(py);
+                client.ws = Some(Arc::new(Mutex::new(ws)));
+                client.negotiated_protocol = negotiated_protocol;
+            });
             Ok(slf)
         })
     }
@@ -285,5 +296,6 @@ pub(crate) fn aconnect(
         pending_url: Some(url),
         config: config.unwrap_or_default(),
         pending_timeout: timeout,
+        negotiated_protocol: None,
     }
 }

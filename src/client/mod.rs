@@ -122,7 +122,7 @@ fn tls_connector() -> Result<TlsConnector, rustls::Error> {
 pub(crate) async fn ws_connect(
     config: ClientConfig,
     url: String,
-) -> PyResult<FragmentCollector<TokioIo<Upgraded>>> {
+) -> PyResult<(FragmentCollector<TokioIo<Upgraded>>, Option<String>)> {
     let uri: Uri = url
         .parse()
         .map_err(|e| PyRuntimeError::new_err(format!("invalid URL: {e}")))?;
@@ -164,6 +164,10 @@ pub(crate) async fn ws_connect(
         )
         .header("Sec-WebSocket-Version", "13");
 
+    if let Some(protocols) = &config.subprotocols {
+        req_builder = req_builder.header("Sec-WebSocket-Protocol", protocols.join(", "));
+    }
+
     if let Some(extra_headers) = &config.extra_headers {
         for (key, value) in extra_headers.iter() {
             req_builder = req_builder.header(key, value);
@@ -174,7 +178,7 @@ pub(crate) async fn ws_connect(
         .body(Empty::<Bytes>::new())
         .map_err(|e| PyRuntimeError::new_err(format!("unable to construct request: {e}")))?;
 
-    let (mut ws, _) = fastwebsockets::handshake::client(&SpawnExecutor, req, stream)
+    let (mut ws, response) = fastwebsockets::handshake::client(&SpawnExecutor, req, stream)
         .await
         .map_err(|e| match e {
             WebSocketError::InvalidStatusCode(status_code) => {
@@ -183,11 +187,17 @@ pub(crate) async fn ws_connect(
             _ => PyRuntimeError::new_err(format!("error on client handshake: {e}")),
         })?;
 
+    let negotiated_protocol = response
+        .headers()
+        .get("Sec-WebSocket-Protocol")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string());
+
     if let Some(size) = config.max_message_size {
         ws.set_max_message_size(size);
     }
 
-    Ok(FragmentCollector::new(ws))
+    Ok((FragmentCollector::new(ws), negotiated_protocol))
 }
 
 #[pymodule]

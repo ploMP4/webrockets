@@ -16,6 +16,8 @@ use crate::client::{
 pub(crate) struct Client {
     #[pyo3(get)]
     config: ClientConfig,
+    #[pyo3(get)]
+    negotiated_protocol: Option<String>,
 
     ws: Option<Mutex<FragmentCollector<TokioIo<Upgraded>>>>,
 }
@@ -28,13 +30,14 @@ impl Client {
         Client {
             ws: None,
             config: config.unwrap_or_default(),
+            negotiated_protocol: None,
         }
     }
 
     #[pyo3(signature=(url, timeout=None))]
     fn connect(&mut self, py: Python<'_>, url: String, timeout: Option<u64>) -> PyResult<()> {
         py.detach(|| {
-            let ws = RUNTIME.block_on(async {
+            let (ws, negotiated_protocol) = RUNTIME.block_on(async {
                 match timeout {
                     Some(millis) => tokio::time::timeout(
                         Duration::from_millis(millis),
@@ -47,6 +50,7 @@ impl Client {
                 }
             })?;
             self.ws = Some(Mutex::new(ws));
+            self.negotiated_protocol = negotiated_protocol;
             Ok(())
         })
     }
@@ -227,6 +231,7 @@ pub(crate) fn connect(
     let mut client = Client {
         ws: None,
         config: config.unwrap_or_default(),
+        negotiated_protocol: None,
     };
     client.connect(py, url, timeout)?;
     Ok(client)
