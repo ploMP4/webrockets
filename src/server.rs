@@ -200,11 +200,13 @@ impl WebsocketServer {
         conn: Py<IncomingConnection>,
     ) -> Result<Py<Connection>, Response> {
         let (upgraded_conn, maybe_handle) = tokio::task::spawn_blocking(move || {
-            Python::attach(|py| {
+            Python::attach(|py| -> Result<_, Box<Response>> {
                 let view = handler.borrow(py);
 
                 if !WebsocketServer::authenticated(py, &view.authentication_classes, &conn) {
-                    return Err((StatusCode::UNAUTHORIZED, "Authentication failed").into_response());
+                    return Err(Box::new(
+                        (StatusCode::UNAUTHORIZED, "Authentication failed").into_response(),
+                    ));
                 }
 
                 let maybe_fut = view
@@ -213,21 +215,25 @@ impl WebsocketServer {
                     .map(|cb| {
                         cb.invoke(py, (&conn,)).map_err(|e| {
                             log::error!("Error in websocket connect_before callback: {e}");
-                            (StatusCode::INTERNAL_SERVER_ERROR, "Connection failed").into_response()
+                            Box::new(
+                                (StatusCode::INTERNAL_SERVER_ERROR, "Connection failed")
+                                    .into_response(),
+                            )
                         })
                     })
                     .transpose()?
                     .flatten();
 
                 let upgraded_conn = IncomingConnection::upgrade(&conn, py).map_err(|_| {
-                    (StatusCode::INTERNAL_SERVER_ERROR, "Upgrade failed").into_response()
+                    Box::new((StatusCode::INTERNAL_SERVER_ERROR, "Upgrade failed").into_response())
                 })?;
 
                 Ok((upgraded_conn, maybe_fut))
             })
         })
         .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Internal error").into_response())??;
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Internal error").into_response())?
+        .map_err(|e| *e)?;
 
         if let Some(handle) = maybe_handle {
             handle
