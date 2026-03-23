@@ -144,9 +144,10 @@ pub(crate) async fn ws_connect(
 
     let stream = if config.verify_ssl {
         let tls_connector = tls_connector().unwrap();
-        let domain = tokio_rustls::rustls::pki_types::ServerName::try_from(host.to_string()).map_err(|_| {
-            std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid dnsname")
-        })?;
+        let domain = tokio_rustls::rustls::pki_types::ServerName::try_from(host.to_string())
+            .map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid dnsname")
+            })?;
         Either::Left(tls_connector.connect(domain, stream).await?)
     } else {
         Either::Right(stream)
