@@ -1,15 +1,15 @@
-use hyper_util::rt::TokioIo;
-use std::{sync::Mutex, time::Duration};
+use std::time::Duration;
 
-use fastwebsockets::{CloseCode, FragmentCollector, Frame, OpCode, Payload};
-use hyper::upgrade::Upgraded;
+use fastwebsockets::{CloseCode, Frame, OpCode, Payload};
 use pyo3::{
     exceptions::{PyRuntimeError, PyTimeoutError},
     prelude::*,
 };
+use tokio::sync::Mutex;
 
 use crate::client::{
-    config::ClientConfig, parse_close_payload, ws_connect, ConnectionClosed, RUNTIME,
+    config::ClientConfig, parse_close_payload, ws_connect, ClientReader, ClientWriter,
+    ConnectionClosed, RUNTIME,
 };
 
 #[pyclass]
@@ -19,7 +19,22 @@ pub(crate) struct Client {
     #[pyo3(get)]
     negotiated_protocol: Option<String>,
 
-    ws: Option<Mutex<FragmentCollector<TokioIo<Upgraded>>>>,
+    reader: Option<Mutex<ClientReader>>,
+    writer: Option<Mutex<ClientWriter>>,
+}
+
+impl Client {
+    fn reader(&self) -> PyResult<&Mutex<ClientReader>> {
+        self.reader
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("no websocket connection"))
+    }
+
+    fn writer(&self) -> PyResult<&Mutex<ClientWriter>> {
+        self.writer
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("no websocket connection"))
+    }
 }
 
 #[pymethods]
@@ -28,7 +43,8 @@ impl Client {
     #[pyo3(signature=(config=None))]
     fn __new__(config: Option<ClientConfig>) -> Self {
         Client {
-            ws: None,
+            reader: None,
+            writer: None,
             config: config.unwrap_or_default(),
             negotiated_protocol: None,
         }
@@ -37,7 +53,7 @@ impl Client {
     #[pyo3(signature=(url, timeout=None))]
     fn connect(&mut self, py: Python<'_>, url: String, timeout: Option<u64>) -> PyResult<()> {
         py.detach(|| {
-            let (ws, negotiated_protocol) = RUNTIME.block_on(async {
+            let (reader, writer, negotiated_protocol) = RUNTIME.block_on(async {
                 match timeout {
                     Some(millis) => tokio::time::timeout(
                         Duration::from_millis(millis),
@@ -49,7 +65,8 @@ impl Client {
                     None => ws_connect(self.config.clone(), url).await,
                 }
             })?;
-            self.ws = Some(Mutex::new(ws));
+            self.reader = Some(Mutex::new(reader));
+            self.writer = Some(Mutex::new(writer));
             self.negotiated_protocol = negotiated_protocol;
             Ok(())
         })
@@ -72,15 +89,9 @@ impl Client {
 
         py.detach(|| {
             let frame = Frame::new(true, OpCode::Ping, None, payload);
-            let mut guard = self
-                .ws
-                .as_ref()
-                .ok_or_else(|| PyRuntimeError::new_err("no websocket connection"))?
-                .lock()
-                .map_err(|e| PyRuntimeError::new_err(format!("poisoned lock: {e}")))?;
-
+            let writer = self.writer()?;
             RUNTIME
-                .block_on(guard.write_frame(frame))
+                .block_on(async { writer.lock().await.write_frame(frame).await })
                 .map_err(|e| PyRuntimeError::new_err(format!("{e}")))
         })
     }
@@ -102,15 +113,9 @@ impl Client {
 
         py.detach(|| {
             let frame = Frame::pong(payload);
-            let mut guard = self
-                .ws
-                .as_ref()
-                .ok_or_else(|| PyRuntimeError::new_err("no websocket connection"))?
-                .lock()
-                .map_err(|e| PyRuntimeError::new_err(format!("poisoned lock: {e}")))?;
-
+            let writer = self.writer()?;
             RUNTIME
-                .block_on(guard.write_frame(frame))
+                .block_on(async { writer.lock().await.write_frame(frame).await })
                 .map_err(|e| PyRuntimeError::new_err(format!("{e}")))
         })
     }
@@ -125,39 +130,45 @@ impl Client {
         };
 
         py.detach(|| {
-            let mut guard = self
-                .ws
-                .as_ref()
-                .ok_or_else(|| PyRuntimeError::new_err("no websocket connection"))?
-                .lock()
-                .map_err(|e| PyRuntimeError::new_err(format!("poisoned lock: {e}")))?;
-
+            let writer = self.writer()?;
             RUNTIME
-                .block_on(guard.write_frame(frame))
+                .block_on(async { writer.lock().await.write_frame(frame).await })
                 .map_err(|e| PyRuntimeError::new_err(format!("{e}")))
         })
     }
 
     #[pyo3(signature=(timeout=None))]
     fn recv(&self, py: Python<'_>, timeout: Option<u64>) -> PyResult<Py<PyAny>> {
+        let reader = self.reader()?;
+        let writer = self.writer()?;
         let frame = py.detach(|| {
-            let mut guard = self
-                .ws
-                .as_ref()
-                .ok_or_else(|| PyRuntimeError::new_err("no websocket connection"))?
-                .lock()
-                .map_err(|e| PyRuntimeError::new_err(format!("poisoned lock: {e}")))?;
-
             RUNTIME.block_on(async {
+                let mut reader = reader.lock().await;
+
                 match timeout {
-                    Some(millis) => {
-                        tokio::time::timeout(Duration::from_millis(millis), guard.read_frame())
-                            .await
-                            .map_err(|_| PyTimeoutError::new_err("recv timed out"))?
-                            .map_err(|e| PyRuntimeError::new_err(format!("{e}")))
-                    }
-                    None => guard
-                        .read_frame()
+                    Some(millis) => tokio::time::timeout(
+                        Duration::from_millis(millis),
+                        reader.read_frame::<_, PyErr>(&mut |frame| async {
+                            writer
+                                .lock()
+                                .await
+                                .write_frame(frame)
+                                .await
+                                .map_err(|e| PyRuntimeError::new_err(format!("{e}")))
+                        }),
+                    )
+                    .await
+                    .map_err(|_| PyTimeoutError::new_err("recv timed out"))?
+                    .map_err(|e| PyRuntimeError::new_err(format!("{e}"))),
+                    None => reader
+                        .read_frame::<_, PyErr>(&mut |frame| async {
+                            writer
+                                .lock()
+                                .await
+                                .write_frame(frame)
+                                .await
+                                .map_err(|e| PyRuntimeError::new_err(format!("{e}")))
+                        })
                         .await
                         .map_err(|e| PyRuntimeError::new_err(format!("{e}"))),
                 }
@@ -185,15 +196,15 @@ impl Client {
     #[pyo3(signature = (code = CloseCode::Normal.into(), reason = ""))]
     fn close(&self, py: Python<'_>, code: u16, reason: &str) -> PyResult<()> {
         py.detach(|| {
-            let mut guard = self
-                .ws
-                .as_ref()
-                .ok_or_else(|| PyRuntimeError::new_err("no websocket connection"))?
-                .lock()
-                .map_err(|e| PyRuntimeError::new_err(format!("poisoned lock: {e}")))?;
-
+            let writer = self.writer()?;
             RUNTIME
-                .block_on(guard.write_frame(Frame::close(code, reason.as_bytes())))
+                .block_on(async {
+                    writer
+                        .lock()
+                        .await
+                        .write_frame(Frame::close(code, reason.as_bytes()))
+                        .await
+                })
                 .map_err(|e| PyRuntimeError::new_err(format!("{e}")))
         })
     }
@@ -229,7 +240,8 @@ pub(crate) fn connect(
     timeout: Option<u64>,
 ) -> PyResult<Client> {
     let mut client = Client {
-        ws: None,
+        reader: None,
+        writer: None,
         config: config.unwrap_or_default(),
         negotiated_protocol: None,
     };
