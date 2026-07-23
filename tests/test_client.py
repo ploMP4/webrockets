@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 from webrockets import Connection, IncomingConnection
-from webrockets.client import ClientConfig, aconnect, connect
+from webrockets.client import ClientConfig, ConnectionClosed, aconnect, connect
 from webrockets.test import runserver
 
 
@@ -85,6 +85,113 @@ class TestClient:
                     pytest.fail("Expected frame too large")
                 except RuntimeError as e:
                     assert "Frame too large" in str(e)
+
+
+class TestIteration:
+    def test_sync_client_iterates_messages(self, ws_server):
+        route = ws_server.create_route("ws")
+
+        @route.connect("after")
+        def conn(conn: Connection):
+            conn.send("one")
+            conn.send("two")
+            conn.close()
+
+        with runserver(ws_server):
+            with connect(f"ws://{ws_server.addr()}/ws") as ws:
+                assert iter(ws) is ws
+                msgs = list(ws)
+
+        assert msgs == ["one", "two"]
+
+    @pytest.mark.asyncio
+    async def test_async_client_iterates_messages(self, ws_server):
+        route = ws_server.create_route("ws")
+
+        @route.connect("after")
+        def conn(conn: Connection):
+            conn.send("one")
+            conn.send("two")
+            conn.close()
+
+        with runserver(ws_server):
+            async with aconnect(f"ws://{ws_server.addr()}/ws") as ws:
+                assert ws.__aiter__() is ws
+                msgs = [msg async for msg in ws]
+
+        assert msgs == ["one", "two"]
+
+    def test_sync_client_iteration_stops_on_normal_close(self, ws_server):
+        route = ws_server.create_route("ws")
+
+        @route.connect("after")
+        def conn(conn: Connection):
+            conn.send("hello")
+            conn.close(code=1000)
+
+        with runserver(ws_server):
+            with connect(f"ws://{ws_server.addr()}/ws") as ws:
+                msgs = []
+                for msg in ws:
+                    msgs.append(msg)
+
+        assert msgs == ["hello"]
+
+    @pytest.mark.asyncio
+    async def test_async_client_iteration_stops_on_normal_close(self, ws_server):
+        route = ws_server.create_route("ws")
+
+        @route.connect("after")
+        def conn(conn: Connection):
+            conn.send("hello")
+            conn.close(code=1000)
+
+        with runserver(ws_server):
+            async with aconnect(f"ws://{ws_server.addr()}/ws") as ws:
+                msgs = []
+                async for msg in ws:
+                    msgs.append(msg)
+
+        assert msgs == ["hello"]
+
+    def test_sync_client_iteration_raises_on_abnormal_close(self, ws_server):
+        route = ws_server.create_route("ws")
+
+        @route.connect("after")
+        def conn(conn: Connection):
+            conn.send("hello")
+            conn.close(code=1011, reason="oops")
+
+        with runserver(ws_server):
+            with connect(f"ws://{ws_server.addr()}/ws") as ws:
+                msgs = []
+                with pytest.raises(ConnectionClosed) as exc_info:
+                    for msg in ws:
+                        msgs.append(msg)
+
+        assert msgs == ["hello"]
+        assert exc_info.value.code == 1011
+        assert exc_info.value.reason == "oops"
+
+    @pytest.mark.asyncio
+    async def test_async_client_iteration_raises_on_abnormal_close(self, ws_server):
+        route = ws_server.create_route("ws")
+
+        @route.connect("after")
+        def conn(conn: Connection):
+            conn.send("hello")
+            conn.close(code=1011, reason="oops")
+
+        with runserver(ws_server):
+            async with aconnect(f"ws://{ws_server.addr()}/ws") as ws:
+                msgs = []
+                with pytest.raises(ConnectionClosed) as exc_info:
+                    async for msg in ws:
+                        msgs.append(msg)
+
+        assert msgs == ["hello"]
+        assert exc_info.value.code == 1011
+        assert exc_info.value.reason == "oops"
 
 
 class TestSubprotocolNegotiation:

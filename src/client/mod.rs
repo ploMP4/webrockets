@@ -8,7 +8,7 @@ use std::{
 use tokio_rustls::TlsConnector;
 use tokio_util::either::Either;
 
-use fastwebsockets::{CloseCode, FragmentCollector, WebSocketError};
+use fastwebsockets::{CloseCode, FragmentCollectorRead, WebSocketError, WebSocketWrite};
 use hyper::{
     header::{CONNECTION, UPGRADE},
     upgrade::Upgraded,
@@ -119,10 +119,13 @@ fn tls_connector() -> Result<TlsConnector, rustls::Error> {
     Ok(TlsConnector::from(Arc::new(config)))
 }
 
+pub(crate) type ClientReader = FragmentCollectorRead<tokio::io::ReadHalf<TokioIo<Upgraded>>>;
+pub(crate) type ClientWriter = WebSocketWrite<tokio::io::WriteHalf<TokioIo<Upgraded>>>;
+
 pub(crate) async fn ws_connect(
     config: ClientConfig,
     url: String,
-) -> PyResult<(FragmentCollector<TokioIo<Upgraded>>, Option<String>)> {
+) -> PyResult<(ClientReader, ClientWriter, Option<String>)> {
     let uri: Uri = url
         .parse()
         .map_err(|e| PyRuntimeError::new_err(format!("invalid URL: {e}")))?;
@@ -198,7 +201,8 @@ pub(crate) async fn ws_connect(
         ws.set_max_message_size(size);
     }
 
-    Ok((FragmentCollector::new(ws), negotiated_protocol))
+    let (read, write) = ws.split(tokio::io::split);
+    Ok((FragmentCollectorRead::new(read), write, negotiated_protocol))
 }
 
 #[pymodule]

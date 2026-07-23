@@ -102,6 +102,16 @@ except TimeoutError:
     print("No message received in time")
 ```
 
+### Iterating Messages
+
+`Client` supports the iterator protocol as a shorthand for calling `recv()` in a loop. Iteration stops when the server closes the connection normally (code `1000`); any other close code raises `ConnectionClosed`:
+
+```python
+with connect("ws://localhost:8080/ws/chat/") as ws:
+    for msg in ws:
+        print(msg)
+```
+
 ### Ping / Pong
 
 Send heartbeat frames to keep a connection alive:
@@ -169,6 +179,16 @@ async with aconnect("wss://api.example.com/ws/", config=config, timeout=5000) as
     await ws.send("Hello!")
     msg = await ws.recv(timeout=10000)
     await ws.ping()
+```
+
+### Iterating Messages
+
+`AsyncClient` supports the async iterator protocol as a shorthand for calling `recv()` in a loop. Iteration stops when the server closes the connection normally (code `1000`); any other close code raises `ConnectionClosed`:
+
+```python
+async with aconnect("ws://localhost:8080/ws/chat/") as ws:
+    async for msg in ws:
+        print(msg)
 ```
 
 ## Exception Handling

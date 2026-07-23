@@ -209,6 +209,16 @@ with connect("ws://localhost:8080/ws/") as ws:
 # Connection is automatically closed
 ```
 
+#### Iteration
+
+`Client` supports the iterator protocol as a shorthand for repeated `recv()` calls. Iteration stops when the server closes the connection normally (code `1000`); any other close code raises `ConnectionClosed`.
+
+```python
+with connect("ws://localhost:8080/ws/") as ws:
+    for msg in ws:
+        print(msg)
+```
+
 ---
 
 ### AsyncClient
@@ -310,6 +320,16 @@ async with aconnect("ws://localhost:8080/ws/") as ws:
     await ws.send("Hello")
     print(await ws.recv())
 # Connection is automatically closed
+```
+
+#### Async Iteration
+
+`AsyncClient` supports the async iterator protocol as a shorthand for repeated `recv()` calls. Iteration stops when the server closes the connection normally (code `1000`); any other close code raises `ConnectionClosed`.
+
+```python
+async with aconnect("ws://localhost:8080/ws/") as ws:
+    async for msg in ws:
+        print(msg)
 ```
 
 ---
