@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [
-#   "websockets",
+#   "webrockets",
 #   "rich",
 # ]
 # ///
@@ -15,12 +15,12 @@ from datetime import datetime
 from queue import Empty, Queue
 from threading import Thread
 
-import websockets
 from rich.console import Console
 from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel
 from rich.text import Text
+from webrockets.client import AsyncClient, ClientConfig, ConnectionClosed, aconnect
 
 
 class ChatClient:
@@ -31,7 +31,7 @@ class ChatClient:
         self.messages: list[tuple[str, str, str]] = []
         self.input_buffer = ""
         self.running = True
-        self.ws: websockets.ClientConnection | None = None
+        self.ws: AsyncClient | None = None
         self.input_queue: Queue[str | None] = Queue()
 
     def render_messages(self) -> Panel:
@@ -113,7 +113,8 @@ class ChatClient:
         """Receive messages from websocket."""
         assert self.ws is not None
         try:
-            async for raw in self.ws:
+            while True:
+                raw = await self.ws.recv()
                 try:
                     data = json.loads(raw)
                     msg_type = data.get("type")
@@ -128,7 +129,7 @@ class ChatClient:
                         self.add_message("system", str(data))
                 except json.JSONDecodeError:
                     self.add_message("system", str(raw))
-        except websockets.ConnectionClosed:
+        except ConnectionClosed:
             self.add_message("system", "Connection closed")
             self.running = False
 
@@ -138,9 +139,8 @@ class ChatClient:
         input_thread.start()
 
         try:
-            async with websockets.connect(
-                "ws://localhost:46290/chat",
-                additional_headers={"username": self.name},
+            async with aconnect(
+                "ws://localhost:46290/chat", ClientConfig(extra_headers={"username": self.name})
             ) as ws:
                 self.ws = ws
                 await ws.send(json.dumps({"type": "join", "room": self.room}))
@@ -161,9 +161,10 @@ class ChatClient:
 
                 recv_task.cancel()
                 input_task.cancel()
+                await asyncio.gather(recv_task, input_task, return_exceptions=True)
 
-        except ConnectionRefusedError:
-            self.console.print("[red]Could not connect to server. Is it running?[/red]")
+        except RuntimeError as e:
+            self.console.print(f"[red]Could not connect to server: {e}[/red]")
         except Exception as e:
             self.console.print(f"[red]Error: {e}[/red]")
 
