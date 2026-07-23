@@ -4,13 +4,48 @@ use tokio::sync::Mutex;
 
 use fastwebsockets::{CloseCode, Frame, OpCode, Payload, WebSocketError};
 use pyo3::{
-    exceptions::{PyRuntimeError, PyTimeoutError},
+    exceptions::{PyRuntimeError, PyStopAsyncIteration, PyTimeoutError},
     prelude::*,
 };
 
 use crate::client::{
     parse_close_payload, ws_connect, ClientConfig, ClientReader, ClientWriter, ConnectionClosed,
 };
+
+async fn read_next(
+    reader: &Arc<Mutex<ClientReader>>,
+    writer: &Arc<Mutex<ClientWriter>>,
+    timeout: Option<u64>,
+) -> PyResult<Frame<'static>> {
+    let mut reader = reader.lock().await;
+    let mut send_fn = |frame| async { writer.lock().await.write_frame(frame).await };
+    let read = reader.read_frame::<_, WebSocketError>(&mut send_fn);
+
+    match timeout {
+        Some(millis) => tokio::time::timeout(Duration::from_millis(millis), read)
+            .await
+            .map_err(|_| PyTimeoutError::new_err("recv timed out"))?
+            .map_err(|e| PyRuntimeError::new_err(format!("{e}"))),
+        None => read
+            .await
+            .map_err(|e| PyRuntimeError::new_err(format!("{e}"))),
+    }
+}
+
+fn frame_to_pyobject(py: Python<'_>, frame: Frame<'_>) -> PyResult<Py<PyAny>> {
+    match frame.opcode {
+        OpCode::Text => Ok(std::str::from_utf8(&frame.payload)
+            .map_err(|e| PyRuntimeError::new_err(format!("invalid UTF-8: {e}")))?
+            .into_pyobject(py)?
+            .into_any()
+            .unbind()),
+        OpCode::Binary => Ok(frame.payload.into_pyobject(py)?.into_any().unbind()),
+        _ => Err(PyRuntimeError::new_err(format!(
+            "unexpected opcode: {:?}",
+            frame.opcode
+        ))),
+    }
+}
 
 #[pyclass]
 pub(crate) struct AsyncClient {
@@ -180,41 +215,45 @@ impl AsyncClient {
             .clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut reader = reader.lock().await;
-
-            let frame = match timeout {
-                Some(millis) => tokio::time::timeout(
-                    Duration::from_millis(millis),
-                    reader.read_frame::<_, WebSocketError>(&mut |frame| async {
-                        writer.lock().await.write_frame(frame).await
-                    }),
-                )
-                .await
-                .map_err(|_| PyTimeoutError::new_err("recv timed out"))?
-                .map_err(|e| PyRuntimeError::new_err(format!("{e}")))?,
-                None => reader
-                    .read_frame::<_, WebSocketError>(&mut |frame| async {
-                        writer.lock().await.write_frame(frame).await
-                    })
-                    .await
-                    .map_err(|e| PyRuntimeError::new_err(format!("{e}")))?,
-            };
-
+            let frame = read_next(&reader, &writer, timeout).await?;
             Python::attach(|py| match frame.opcode {
-                OpCode::Text => Ok(std::str::from_utf8(&frame.payload)
-                    .map_err(|e| PyRuntimeError::new_err(format!("invalid UTF-8: {e}")))?
-                    .into_pyobject(py)?
-                    .into_any()
-                    .unbind()),
-                OpCode::Binary => Ok(frame.payload.into_pyobject(py)?.into_any().unbind()),
                 OpCode::Close => {
                     let (code, reason) = parse_close_payload(&frame.payload);
                     Err(PyErr::new::<ConnectionClosed, _>((code, reason)))
                 }
-                _ => Err(PyRuntimeError::new_err(format!(
-                    "unexpected opcode: {:?}",
-                    frame.opcode
-                ))),
+                _ => frame_to_pyobject(py, frame),
+            })
+        })
+    }
+
+    fn __aiter__(slf: Py<Self>) -> Py<Self> {
+        slf
+    }
+
+    fn __anext__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let reader = self
+            .reader
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("no websocket connection"))?
+            .clone();
+        let writer = self
+            .writer
+            .as_ref()
+            .ok_or_else(|| PyRuntimeError::new_err("no websocket connection"))?
+            .clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let frame = read_next(&reader, &writer, None).await?;
+            Python::attach(|py| match frame.opcode {
+                OpCode::Close => {
+                    let (code, reason) = parse_close_payload(&frame.payload);
+                    if code == u16::from(CloseCode::Normal) {
+                        Err(PyStopAsyncIteration::new_err(()))
+                    } else {
+                        Err(PyErr::new::<ConnectionClosed, _>((code, reason)))
+                    }
+                }
+                _ => frame_to_pyobject(py, frame),
             })
         })
     }

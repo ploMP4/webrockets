@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use fastwebsockets::{CloseCode, Frame, OpCode, Payload};
 use pyo3::{
-    exceptions::{PyRuntimeError, PyTimeoutError},
+    exceptions::{PyRuntimeError, PyStopIteration, PyTimeoutError},
     prelude::*,
 };
 use tokio::sync::Mutex;
@@ -34,6 +34,51 @@ impl Client {
         self.writer
             .as_ref()
             .ok_or_else(|| PyRuntimeError::new_err("no websocket connection"))
+    }
+
+    fn recv_frame(&self, py: Python<'_>, timeout: Option<u64>) -> PyResult<Frame<'static>> {
+        let reader = self.reader()?;
+        let writer = self.writer()?;
+
+        py.detach(|| {
+            RUNTIME.block_on(async {
+                let mut reader = reader.lock().await;
+                let mut send_fn = |frame| async {
+                    writer
+                        .lock()
+                        .await
+                        .write_frame(frame)
+                        .await
+                        .map_err(|e| PyRuntimeError::new_err(format!("{e}")))
+                };
+                let read = reader.read_frame::<_, PyErr>(&mut send_fn);
+
+                match timeout {
+                    Some(millis) => tokio::time::timeout(Duration::from_millis(millis), read)
+                        .await
+                        .map_err(|_| PyTimeoutError::new_err("recv timed out"))?
+                        .map_err(|e| PyRuntimeError::new_err(format!("{e}"))),
+                    None => read
+                        .await
+                        .map_err(|e| PyRuntimeError::new_err(format!("{e}"))),
+                }
+            })
+        })
+    }
+
+    fn frame_to_pyobject(py: Python<'_>, frame: Frame<'_>) -> PyResult<Py<PyAny>> {
+        match frame.opcode {
+            OpCode::Text => Ok(std::str::from_utf8(&frame.payload)
+                .map_err(|e| PyRuntimeError::new_err(format!("invalid UTF-8: {e}")))?
+                .into_pyobject(py)?
+                .into_any()
+                .unbind()),
+            OpCode::Binary => Ok(frame.payload.into_pyobject(py)?.into_any().unbind()),
+            _ => Err(PyRuntimeError::new_err(format!(
+                "unexpected opcode: {:?}",
+                frame.opcode
+            ))),
+        }
     }
 }
 
@@ -139,58 +184,29 @@ impl Client {
 
     #[pyo3(signature=(timeout=None))]
     fn recv(&self, py: Python<'_>, timeout: Option<u64>) -> PyResult<Py<PyAny>> {
-        let reader = self.reader()?;
-        let writer = self.writer()?;
-        let frame = py.detach(|| {
-            RUNTIME.block_on(async {
-                let mut reader = reader.lock().await;
-
-                match timeout {
-                    Some(millis) => tokio::time::timeout(
-                        Duration::from_millis(millis),
-                        reader.read_frame::<_, PyErr>(&mut |frame| async {
-                            writer
-                                .lock()
-                                .await
-                                .write_frame(frame)
-                                .await
-                                .map_err(|e| PyRuntimeError::new_err(format!("{e}")))
-                        }),
-                    )
-                    .await
-                    .map_err(|_| PyTimeoutError::new_err("recv timed out"))?
-                    .map_err(|e| PyRuntimeError::new_err(format!("{e}"))),
-                    None => reader
-                        .read_frame::<_, PyErr>(&mut |frame| async {
-                            writer
-                                .lock()
-                                .await
-                                .write_frame(frame)
-                                .await
-                                .map_err(|e| PyRuntimeError::new_err(format!("{e}")))
-                        })
-                        .await
-                        .map_err(|e| PyRuntimeError::new_err(format!("{e}"))),
-                }
-            })
-        })?;
-
-        match frame.opcode {
-            OpCode::Text => Ok(std::str::from_utf8(&frame.payload)
-                .map_err(|e| PyRuntimeError::new_err(format!("invalid UTF-8: {e}")))?
-                .into_pyobject(py)?
-                .into_any()
-                .unbind()),
-            OpCode::Binary => Ok(frame.payload.into_pyobject(py)?.into_any().unbind()),
-            OpCode::Close => {
-                let (code, reason) = parse_close_payload(&frame.payload);
-                Err(PyErr::new::<ConnectionClosed, _>((code, reason)))
-            }
-            _ => Err(PyRuntimeError::new_err(format!(
-                "unexpected opcode: {:?}",
-                frame.opcode
-            ))),
+        let frame = self.recv_frame(py, timeout)?;
+        if let OpCode::Close = frame.opcode {
+            let (code, reason) = parse_close_payload(&frame.payload);
+            return Err(PyErr::new::<ConnectionClosed, _>((code, reason)));
         }
+        Self::frame_to_pyobject(py, frame)
+    }
+
+    fn __iter__(slf: Py<Self>) -> Py<Self> {
+        slf
+    }
+
+    fn __next__(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let frame = self.recv_frame(py, None)?;
+        if let OpCode::Close = frame.opcode {
+            let (code, reason) = parse_close_payload(&frame.payload);
+            return if code == u16::from(CloseCode::Normal) {
+                Err(PyStopIteration::new_err(()))
+            } else {
+                Err(PyErr::new::<ConnectionClosed, _>((code, reason)))
+            };
+        }
+        Self::frame_to_pyobject(py, frame)
     }
 
     #[pyo3(signature = (code = CloseCode::Normal.into(), reason = ""))]
