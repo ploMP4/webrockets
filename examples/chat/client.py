@@ -113,8 +113,7 @@ class ChatClient:
         """Receive messages from websocket."""
         assert self.ws is not None
         try:
-            while True:
-                raw = await self.ws.recv()
+            async for raw in self.ws:
                 try:
                     data = json.loads(raw)
                     msg_type = data.get("type")
@@ -130,8 +129,9 @@ class ChatClient:
                 except json.JSONDecodeError:
                     self.add_message("system", str(raw))
         except ConnectionClosed:
-            self.add_message("system", "Connection closed")
-            self.running = False
+            pass
+        self.add_message("system", "Connection closed")
+        self.running = False
 
     async def run(self):
         # Start input thread
