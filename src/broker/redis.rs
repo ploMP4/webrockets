@@ -114,19 +114,24 @@ impl Broker for Redis {
     }
 
     async fn send(&self, payload: String) -> PyResult<()> {
-        let mut guard = self.conn.lock().await;
+        // Clone the multiplexed connection out of the lock so concurrent
+        // publishes are pipelined instead of serialized one-per-roundtrip.
+        let mut conn = {
+            let mut guard = self.conn.lock().await;
 
-        let conn = if let Some(ref mut conn) = *guard {
-            conn
-        } else {
-            let client = redis::Client::open(self.config.url.clone())
-                .map_err(|e| PyRuntimeError::new_err(format!("Redis error: {}", e)))?;
-            let new_conn = client
-                .get_multiplexed_async_connection()
-                .await
-                .map_err(|e| PyRuntimeError::new_err(format!("Redis error: {}", e)))?;
-            *guard = Some(new_conn);
-            guard.as_mut().unwrap()
+            match &*guard {
+                Some(conn) => conn.clone(),
+                None => {
+                    let client = redis::Client::open(self.config.url.clone())
+                        .map_err(|e| PyRuntimeError::new_err(format!("Redis error: {}", e)))?;
+                    let new_conn = client
+                        .get_multiplexed_async_connection()
+                        .await
+                        .map_err(|e| PyRuntimeError::new_err(format!("Redis error: {}", e)))?;
+                    *guard = Some(new_conn.clone());
+                    new_conn
+                }
+            }
         };
 
         conn.publish::<_, _, ()>(&self.config.channel, &payload)

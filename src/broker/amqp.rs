@@ -155,39 +155,43 @@ impl Broker for Amqp {
     }
 
     async fn send(&self, payload: String) -> PyResult<()> {
-        let mut guard = self.channel.lock().await;
+        // Clone the channel out of the lock so concurrent publishes are not
+        // serialized behind each other's broker roundtrip.
+        let channel = {
+            let mut guard = self.channel.lock().await;
 
-        let needs_new = match guard.as_ref() {
-            Some(ch) => !ch.status().connected(),
-            None => true,
+            let needs_new = match guard.as_ref() {
+                Some(ch) => !ch.status().connected(),
+                None => true,
+            };
+
+            if needs_new {
+                let conn = Connection::connect(&self.config.url, ConnectionProperties::default())
+                    .await
+                    .map_err(|e| PyRuntimeError::new_err(format!("AMQP error: {}", e)))?;
+
+                let ch = conn
+                    .create_channel()
+                    .await
+                    .map_err(|e| PyRuntimeError::new_err(format!("AMQP error: {}", e)))?;
+
+                ch.exchange_declare(
+                    &self.config.exchange,
+                    lapin::ExchangeKind::Fanout,
+                    ExchangeDeclareOptions {
+                        durable: true,
+                        ..Default::default()
+                    },
+                    FieldTable::default(),
+                )
+                .await
+                .map_err(|e| PyRuntimeError::new_err(format!("AMQP error: {}", e)))?;
+
+                *guard = Some(ch);
+            }
+
+            guard.as_ref().unwrap().clone()
         };
-
-        if needs_new {
-            let conn = Connection::connect(&self.config.url, ConnectionProperties::default())
-                .await
-                .map_err(|e| PyRuntimeError::new_err(format!("AMQP error: {}", e)))?;
-
-            let ch = conn
-                .create_channel()
-                .await
-                .map_err(|e| PyRuntimeError::new_err(format!("AMQP error: {}", e)))?;
-
-            ch.exchange_declare(
-                &self.config.exchange,
-                lapin::ExchangeKind::Fanout,
-                ExchangeDeclareOptions {
-                    durable: true,
-                    ..Default::default()
-                },
-                FieldTable::default(),
-            )
-            .await
-            .map_err(|e| PyRuntimeError::new_err(format!("AMQP error: {}", e)))?;
-
-            *guard = Some(ch);
-        }
-
-        let channel = guard.as_ref().unwrap();
 
         channel
             .basic_publish(
