@@ -164,7 +164,7 @@ impl WebsocketServer {
 
         let conn = match WebsocketServer::authenticate_and_connect(handler.clone(), conn).await {
             Ok(conn) => conn,
-            Err(response) => return response,
+            Err(response) => return *response,
         };
 
         let negotiated_protocol =
@@ -198,7 +198,7 @@ impl WebsocketServer {
     async fn authenticate_and_connect(
         handler: Arc<Py<WebsocketRoute>>,
         conn: Py<IncomingConnection>,
-    ) -> Result<Py<Connection>, Response> {
+    ) -> Result<Py<Connection>, Box<Response>> {
         let (upgraded_conn, maybe_handle) = tokio::task::spawn_blocking(move || {
             Python::attach(|py| -> Result<_, Box<Response>> {
                 let view = handler.borrow(py);
@@ -232,16 +232,19 @@ impl WebsocketServer {
             })
         })
         .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Internal error").into_response())?
-        .map_err(|e| *e)?;
+        .map_err(|_| {
+            Box::new((StatusCode::INTERNAL_SERVER_ERROR, "Internal error").into_response())
+        })??;
 
         if let Some(handle) = maybe_handle {
             handle
                 .await
                 .map_err(|_| {
-                    (StatusCode::INTERNAL_SERVER_ERROR, "Connection failed").into_response()
+                    Box::new(
+                        (StatusCode::INTERNAL_SERVER_ERROR, "Connection failed").into_response(),
+                    )
                 })?
-                .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()).into_response())?;
+                .map_err(|e| Box::new((StatusCode::UNAUTHORIZED, e.to_string()).into_response()))?;
         }
 
         Ok(upgraded_conn)
